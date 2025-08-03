@@ -119,8 +119,8 @@ class HunterUI(QWidget):
             "windows_png" + "/mp_bar_empty.png",
             bar_h_margin=2,      # 템플릿이 바 안쪽만 찍혔으면 0~2px 여유
             bar_v_margin=0,
-            hp_thresh=0.6,       # 60 % 미만에서 사용
-            mp_thresh=0.6
+            hp_thresh=0.4,       # 60 % 미만에서 사용
+            mp_thresh=0.4
         ).loop,
         daemon=True).start()
     
