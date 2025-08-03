@@ -1,3 +1,8 @@
+
+from multiprocessing import Queue
+from worker import MinimapWorker 
+
+from multiprocessing import Process, Queue
 import pygetwindow as gw
 import pyautogui
 import subprocess
@@ -10,16 +15,15 @@ import os
 import random
 import math
 import threading
-
+from PyQt5.QtGui import QImage
 from helper import in_rect
-
-
+from constant import route_ptrol
+from collections import deque
 END_X = 1280
 END_Y = 720
 IMG_PATH = 'windows_png'
 # ---------- 1. 윈도우/맥 창 조절 ----------
 class GameWindowController:
-    global IMG_PATH, END_X, END_Y
 
     def __init__(self, title, width, height):
         self.title = title
@@ -27,6 +31,7 @@ class GameWindowController:
         self.height = height
 
     def resize(self):
+        global IMG_PATH, END_X, END_Y
         if platform.system() == "Windows":
             IMG_PATH = "windows_png"
             END_X = self.width = 970
@@ -100,7 +105,6 @@ class MinimapTracker:
             cv2.imwrite("minimap_capture.png", img)
 
     def update_position(self):
-        print("update_position")
         while True:
             with mss.mss() as sct:
                 x, y, w, h = self.minimap_area
@@ -182,54 +186,9 @@ class SlimeDetector:
         return unique
 
 
-# ---------- 5. 지형 판단기 ----------
-class TerrainNavigator:
-    def __init__(self):
-        self.jump_zones = []
-        self.ladder_zones = [(57, 140, ), ]
-        self.fall_zones = [(1000, 1050)]
-
-    def in_zone(self, x, zone): return any(start <= x <= end for (start, end) in zone)
-    
-    def act(self, pos):
-        if not pos: return
-        x, y = pos
-        
-        if self.in_zone(x, self.fall_zones):
-            print("[ACT] 낙사 방지 → 정지")
-            for k in ['left', 'right', 'z']:
-                pyautogui.keyUp(k)
-        elif self.in_zone(x, self.ladder_zones):
-            print("[ACT] 사다리 오름")
-            pyautogui.press('altleft') 
-            pyautogui.press('altright') 
-            pyautogui.keyDown('up'); time.sleep(1.5); pyautogui.keyUp('up')
-        elif self.in_zone(x, self.jump_zones):
-            print("[ACT] 점프!")
-            pyautogui.keyDown('right')
-            pyautogui.press('alt')
-            time.sleep(0.6)
-            pyautogui.keyUp('right')
-        # else:
-        #     d = random.choice(['left', 'right'])
-        #     print(f"[ACT] 슬라임 없음 → {d}으로 순찰")
-        #     pyautogui.keyDown(d)
-        #     time.sleep(random.uniform(0.5, 1.0))
-        #     pyautogui.keyUp(d)
-
-
 # ---------- 6. 메인 봇 ----------
 class SlimeHunterBot:
-
-    def drop_down(self):
-        """↓+Alt 로 아래 플랫폼으로 내려가기"""
-        pyautogui.keyDown('down')
-        pyautogui.press('alt')       # 점프키 → 드랍
-        time.sleep(0.12)             # 짧게 눌렀다 떼기
-        pyautogui.keyUp('down')
-
     def __init__(self):
-        print('IMG_PATH' + IMG_PATH)
         self.detector = SlimeDetector(IMG_PATH + "/monsters/henesisu")
         # self.minimap = MinimapTracker("windows_png" + "/minimap_topLeft.png","windows_png" + "/minimap_bottomRight.png", "windows_png" + "/me.png")
         self.minimap = MinimapTracker(
@@ -238,27 +197,24 @@ class SlimeHunterBot:
             "windows_png" + "/me.png"
         )
         # self.terrain = TerrainNavigator()
-        self.route = RoutePatrol([
-            {"x": 57, "y":140, "action":"move"},
-            {"x": 57, "y":140, "action":"ladder"},
-            {"x": 93, "y":123, "action":"move"},
-            {"x": 80, "y":125, "action":"move"},
-            {"x": 80, "y":125, "action":"ladder"},
-            {"x": 59, "y":111, "action":"move"},
-            {"x": 67, "y":111, "action":"move"},
-            {"x": 67, "y":111, "action":"ladder"},
-            {"x": 91, "y":96, "action":"move"},
-            {"x": 55, "y":96, "action":"jump"},
-            # {"x": 45, "y":88, "action":"move_and_jump"},
-            # {"x": 45, "y":88, "action":"jump"},   
-        ])
-        self.was_attacking = False
-
+        self.route = RoutePatrol(route_ptrol)
          # 키 상태
         self.shift_down = self.left_down = self.right_down = self.z_down = False
         self.current_dir = None
         self.running = True   
         self.paused  = False
+        self.frame_emitter = None
+        self.last_z_refresh = time.time()
+
+    def drop_down(self):
+        """↓+Alt 로 아래 플랫폼으로 내려가기"""
+        pyautogui.keyDown('down')
+        pyautogui.press('alt')       # 점프키 → 드랍
+        time.sleep(0.12)             # 짧게 눌렀다 떼기
+        pyautogui.keyUp('down')
+
+    def set_frame_emitter(self, emitter):
+        self.frame_emitter = emitter   # UI/스레드에서 연결해 줌
 
     def stop(self):
         self.running = False
@@ -295,7 +251,6 @@ class SlimeHunterBot:
         self.route.index = nearest
         print(f"[INFO] WP 재선택 → #{nearest}")
     # ----------------------------------------------------------------
-   
     def move_toward(self, target_x, action):
         """목표 x 로 이동. action='ladder' 면 1픽셀, 나머지는 5픽셀 오차로 멈춘다"""
         cur_x = self.minimap.current_position[0]
@@ -330,23 +285,38 @@ class SlimeHunterBot:
 
     # ----------------------------------------------------------------
     def do_action(self, action):
+        print("엑션: ", action)
         if action == "jump":
             pyautogui.press('alt')              # 단순 점프
         elif action == "ladder":
             self.do_action('jump')              # 단순 점프
             pyautogui.keyDown('up');
-            time.sleep(1.5);
+            time.sleep(2);
             pyautogui.keyUp('up')
 
+    # def visualize(self, detections):
+    #     with mss.mss() as sct:
+    #         monitor = {"top": int(0), "left": int(0), "width": int(END_X), "height": int(END_Y)}
+    #         screen = np.array(sct.grab(monitor))[:, :, :3].copy()
+    #     for (x, y) in detections:
+    #         cv2.rectangle(screen, (x-25, y-25), (x+25, y+25), (0, 0, 255), 2)
+    #     cv2.imwrite("debug_screen.png", screen)
+    #     print("[INFO] debug_screen.png 저장됨")
+    
     def visualize(self, detections):
         with mss.mss() as sct:
             monitor = {"top": int(0), "left": int(0), "width": int(END_X), "height": int(END_Y)}
-            screen = np.array(sct.grab(monitor))[:, :, :3].copy()
+            frame = np.array(sct.grab(monitor))[:, :, :3].copy()    # BGR
+
         for (x, y) in detections:
-            cv2.rectangle(screen, (x-25, y-25), (x+25, y+25), (0, 0, 255), 2)
-        cv2.imwrite("debug_screen.png", screen)
-        print("[INFO] debug_screen.png 저장됨")
-        
+            cv2.rectangle(frame, (x-25, y-25), (x+25, y+25), (0, 0, 255), 2)
+
+        # ----- PyQt 라벨로 전송 -----
+        if self.frame_emitter is not None:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb.shape
+            qimg = QImage(rgb.data, w, h, ch*w, QImage.Format_RGB888)
+            self.frame_emitter.emit(qimg.copy())   # copy() 로 안전 전송
     def reached(self, wp):
         """웨이포인트에 도달했는지 여부를 반환"""
         cx, cy = self.minimap.current_position
@@ -355,31 +325,25 @@ class SlimeHunterBot:
 
         if wp["action"] == "ladder":
             # 사다리는 x 정밀도만 중요 (+/-1px)
-            return dx <= 1
+            return dx == 0
         else:
             # 나머지는 x, y 모두 여유 있게
             return dx <= 6 and dy <= 6
 
     def run(self):
-        
         threading.Thread(target=self.minimap.update_position, daemon=True).start()
-
         last_search, targets = 0, []
 
         while self.running:
             if self.paused:
                 time.sleep(0.1)
                 continue
-            if time.time() - last_search > 0.8:
+            if time.time() - last_search > 0.5:
                 targets = self.detector.find()
                 last_search = time.time()
-                if targets:
-                    self.visualize(targets)
-            
+                # if targets:
+                #     self.visualize(targets)
             char_pos = pyautogui.locateCenterOnScreen(IMG_PATH + "/charactor.png", confidence=0.55)
-
-            attack_now = False        # ★추가
-
             if char_pos and targets:
                 closest = min(targets, key=lambda t: math.hypot(t[0]-char_pos[0],
                                                                 t[1]-char_pos[1]))
@@ -388,8 +352,6 @@ class SlimeHunterBot:
                 dist = math.hypot(dx, dy)
 
                 if dist <= 220:                       # 사정거리 안
-                    attack_now = True
-
                     # ── (1) 몬스터 쪽으로 캐릭터 방향 고정 ──
                     if dx < 0:        # 왼쪽
                         if not self.left_down:
@@ -406,6 +368,7 @@ class SlimeHunterBot:
                     # (2) 공격키 유지
                     if not self.shift_down:
                         pyautogui.keyDown('shift'); self.shift_down = True
+                        print("[INFO] 공격")
 
                     # (3) 대시(z)는 필요하면 취향대로 유지/해제
                     if self.z_down:
@@ -417,10 +380,8 @@ class SlimeHunterBot:
                     # 사거리 밖 → 공격키 해제
                     if self.shift_down:
                         pyautogui.keyUp('shift'); self.shift_down = False
+                        print("[INFO] 공격 중지")
             # (1) 공격 → 비공격 전환 순간에 WP 재선택
-            if self.was_attacking and not attack_now:
-                self.reselect_waypoint()
-            self.was_attacking = attack_now
 
             # 3) 경로 순찰
             if not self.minimap.current_position:
@@ -436,11 +397,8 @@ class SlimeHunterBot:
                 continue                      # 다음 loop 에서 다시 판단
             # 목표점에 도달했는지 확인 (오차 6픽셀)
             if self.reached(wp):
+                print('목표점에 도달')
                 # 이동키 해제
-                print(f"target_x : {target_x}")
-                print(f"target_y : {target_y}")
-                print(f"me_x : {self.minimap.current_position[0]}")
-                print(f"my_y : {self.minimap.current_position[1]}")
                 if self.left_down:  pyautogui.keyUp('left');  self.left_down  = False
                 if self.right_down: pyautogui.keyUp('right'); self.right_down = False
                 if self.z_down:     pyautogui.keyUp('z');     self.z_down     = False
@@ -469,13 +427,13 @@ class SlimeHunterBot:
                         continue
 
                 time.sleep(0.2)
-                
             else:
-                # 목표 x 쪽으로 걷기
-                self.move_toward(target_x,act)
+                print("목표 x 쪽으로 걷기, ", target_x)
+                self.move_toward(target_x, act)
+                self.keep_z_alive()
                 # 지형(낙사·사다리·점프) 즉시 대응
                 # self.terrain.act(self.minimap.current_position)
-
+           
             time.sleep(0.15)
 if __name__ == "__main__":
     GameWindowController("MapleStory Worlds", END_X, END_Y).resize()
