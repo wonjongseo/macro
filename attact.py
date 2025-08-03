@@ -2,7 +2,8 @@
 import pygetwindow as gw
 import pyautogui
 import time
-
+import platform
+import pygetwindow as gw
 import os
 import cv2
 import mss
@@ -11,15 +12,27 @@ import numpy as np
 import math
 import time
 import subprocess
+import random  # 상단에 추가 필요
 import threading
 TARGET_TITLE = "MapleStory Worlds"  # 창 제목에 포함되는 문자열
-
 SCREEN_X_START = 0
 SCREEN_X_END = 1280
 SCREEN_Y_START = 0
 SCREEN_Y_END = 720
 
+def resize_window_windows(title_keyword="MapleStory Worlds", x=0, y=0, width=1280, height=720):
+    try:
+        windows = gw.getWindowsWithTitle(title_keyword)
+        if not windows:
+            print(f"[ERROR] '{title_keyword}'를 포함하는 창을 찾을 수 없습니다.")
+            return
 
+        win = windows[0]  # 가장 첫 번째 창 사용
+        win.moveTo(x, y)
+        win.resizeTo(width, height)
+        print(f"[INFO] '{win.title}' 창을 {width}x{height} 크기로 이동 및 최상단으로 이동 완료.")
+    except Exception as e:
+        print(f"[ERROR] 창 크기 조절 중 예외 발생: {e}")
 def resize_mac_window(app_name="MapleStory Worlds MapleStory Worlds", x=0, y=0, width=1280, height=720):
     script = f'''
     tell application "System Events"
@@ -44,9 +57,9 @@ MINIMAP_BOTTOM_RIGHT = (SCREEN_X_END, SCREEN_Y_END)  # x, y
 
 ME_IMAGE_PATH = "pngs/me.png"
 ME_CONFIDENCE = 0.7
-current_me_position = None  # (x, y) 형태로 저장됨
+current_me_position = None  # (x, y) 형태로 저장됨ddd
 
-def capture_minimap(top_left_img='pngs/minimap_topLeft.png', bottom_right_img='pngs/minimap_bottomRight.png', save_path='pngs/minimap_capture.png'):
+def capture_minimap(top_left_img='windows_png/minimap_topLeft.png', bottom_right_img='windows_png/minimap_bottomRight.png', save_path='windows_png/minimap_capture.png'):
     print("[INFO] 미니맵 영역 감지 시작...")
 
     # top-left 찾기
@@ -73,7 +86,12 @@ def capture_minimap(top_left_img='pngs/minimap_topLeft.png', bottom_right_img='p
 
     # mss로 캡처
     with mss.mss() as sct:
-        monitor = {"left": x1, "top": y1, "width": width, "height": height}
+        monitor = {
+            "left": int(x1),
+            "top": int(y1),
+            "width": int(width),
+            "height": int(height)
+        }
         img = np.array(sct.grab(monitor))[:, :, :3]  # BGR
         cv2.imwrite(save_path, img)
         print(f"[INFO] 미니맵 저장 완료 → {save_path}")
@@ -161,8 +179,8 @@ def potion_monitor_loop():
         time.sleep(POTION_CHECK_INTERVAL)
 
 
-TEMPLATE_FOLDER = "pngs/monsters/헤네시스사냥터1"
-CHAR_IMAGE_PATH = "charactor.png"
+TEMPLATE_FOLDER = "windows_png/monsters/henesisu/"
+CHAR_IMAGE_PATH = "windows_png/charactor.png"
 CONFIDENCE = 0.7
 ATTACK_RANGE = 220
 SEARCH_INTERVAL = 0.8
@@ -219,96 +237,6 @@ def visualize(detections):
     cv2.imwrite("debug_screen.png", screen)
     print("[INFO] debug_screen.png 저장됨")
 
-# def main():
-#     print("[INFO] 슬라임 자동 감지 시작")
-#     templates = load_templates()
-#     shift_down = left_down = right_down = z_down = False
-#     current_direction = None
-#     last_search = 0
-#     targets = []
-
-#     try:
-#         while True:
-#             char_pos = find_char_center()
-
-#             if time.time() - last_search > SEARCH_INTERVAL:
-#                 targets = find_slimes(templates)
-#                 last_search = time.time()
-#                 if targets:
-#                     visualize(targets)
-
-#             if not char_pos or not targets:
-#                 print("[INFO] 캐릭터 또는 슬라임 없음")
-#                 time.sleep(0.2)
-#                 continue
-
-#             distances = [euclidean_distance(char_pos, t) for t in targets]
-#             closest = targets[np.argmin(distances)]
-#             dist = min(distances)
-#             dx = closest[0] - char_pos[0]
-#             direction = 'right' if dx > 0 else 'left'
-#             print(f"[INFO] 거리 {dist:.1f}, 방향 {direction}")
-
-#             if dist <= ATTACK_RANGE:
-#                 # 공격 거리 안에 있을 때
-#                 if direction == current_direction:
-#                     if z_down:
-#                         pyautogui.keyUp('z')
-#                         z_down = False
-#                         print("이동 키 (z) 해제")
-#                     if not shift_down:
-#                         pyautogui.keyDown('shift')
-#                         shift_down = True
-#                         print("공격 시작 (shift ↓)")
-#                 else:
-#                     print("방향 불일치, 이동 재조정 필요")
-#             else:
-#                 if shift_down:
-#                     pyautogui.keyUp('shift')
-#                     shift_down = False
-#                     print("공격 중단 (shift ↑)")
-
-#             if dist > ATTACK_RANGE:
-#                 # 이동 시작
-#                 if direction == 'left':
-#                     if not left_down:
-#                         pyautogui.keyDown('left')
-#                         left_down = True
-#                         current_direction = 'left'
-#                         print("← 이동 시작")
-#                     if right_down:
-#                         pyautogui.keyUp('right')
-#                         right_down = False
-#                 else:
-#                     if not right_down:
-#                         pyautogui.keyDown('right')
-#                         right_down = True
-#                         current_direction = 'right'
-#                         print("→ 이동 시작")
-#                     if left_down:
-#                         pyautogui.keyUp('left')
-#                         left_down = False
-#                 if not z_down:
-#                     pyautogui.keyDown('z')
-#                     z_down = True
-#                     print("이동 키 (z) 누름")
-#             else:
-#                 if left_down:
-#                     pyautogui.keyUp('left')
-#                     left_down = False
-#                 if right_down:
-#                     pyautogui.keyUp('right')
-#                     right_down = False
-
-#             time.sleep(0.2)
-
-#     except KeyboardInterrupt:
-#         print("\n[INFO] 수동 종료됨 (Ctrl+C)")
-#     finally:
-#         for k in ['shift', 'left', 'right' ,'z']:
-#             pyautogui.keyUp(k)
-
-
 
 def main():
     print("[INFO] 슬라임 자동 감지 시작")
@@ -332,8 +260,21 @@ def main():
 
             if not char_pos or not targets:
                 print("[INFO] 캐릭터 또는 슬라임 없음")
+
+                # 공격 키가 눌려 있다면 해제
+                if shift_down:
+                    pyautogui.keyUp('shift')
+                    shift_down = False
+                    print("[INFO] 공격 키 (shift) 해제")
                 time.sleep(0.2)
                 continue
+
+                # 이동 방향 랜덤 선택
+                # direction = random.choice(['left', 'right'])
+                # duration = random.uniform(0.5, 1.2)  # 0.5~1.2초 정도 이동
+
+                # # 이동 실행
+                # print(f"[INFO] 랜덤 이동 시작 → 방향: {direction}, {duration:.2f}초 이동")
 
             # 가장 가까운 슬라임 찾기
             distances = [euclidean_distance(char_pos, t) for t in targets]
@@ -356,7 +297,10 @@ def main():
                         shift_down = True
                         print("[INFO] 공격 시작 (shift ↓)")
                 else:
-                    print("[INFO] 방향 불일치, 공격 중단 및 이동 재조정 필요")
+                    # 방향만 안 맞았던 것이므로 방향 업데이트하고 바로 공격
+                    current_direction = direction
+                    print(f"[INFO] 방향 재조정: {direction} → current_direction 업데이트")
+                    # 여기선 굳이 이동하지 않고 방향만 기억하게 설정
             else:
                 # 공격 사거리 밖 → 이동만 수행
                 if shift_down:
@@ -396,7 +340,10 @@ def main():
         for k in ['shift', 'left', 'right', 'z']:
             pyautogui.keyUp(k)
 if __name__ == "__main__":
-    resize_mac_window(TARGET_TITLE, 0, 0, SCREEN_X_END, SCREEN_Y_END)
+    if platform.system() == "Darwin":  # macOS
+        resize_mac_window(TARGET_TITLE, 0, 0, SCREEN_X_END, SCREEN_Y_END)
+    elif platform.system() == "Windows":
+        resize_window_windows(TARGET_TITLE, 0, 0, SCREEN_X_END, SCREEN_Y_END)
     capture_minimap()
     # find_me_in_minimap()
     threading.Thread(target=update_me_position_loop, daemon=True).start()
