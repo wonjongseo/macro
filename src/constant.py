@@ -1,6 +1,7 @@
 route_ptrol = [
-    {"x": 40, "y":159, "action":"move"},
     {"x": 57, "y":159, "action":"ladder"},
+    # {"x": 40, "y":159, "action":"move"},
+    # {"x": 57, "y":159, "action":"ladder"},
     {"x": 94, "y":144, "action":"move"},
     {"x": 80, "y":144, "action":"move"},
     {"x": 80, "y":144, "action":"ladder"},

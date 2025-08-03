@@ -4,7 +4,7 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import  QApplication, QWidget, QPushButton, QVBoxLayout, QLabel
 import sys, time
 from PyQt5.QtCore import Qt, QTimer
-from main import END_X, END_Y, GameWindowController, SlimeHunterBot
+from main import END_X, END_Y, GameWindowController, PotionManager, SlimeHunterBot
 from PyQt5.QtCore import QThread, pyqtSignal   # pyqtSignal 추가
 from PyQt5.QtGui import QImage 
 
@@ -47,12 +47,43 @@ class HunterUI(QWidget):
         # self.debug_label.setFixedSize(240, 135)   # 필요하면 크기 조정
         layout.addWidget(self.debug_label)        # 버튼·상태 아래에 추가
 
+         # ───── 상태 라벨 추가 ─────────────────────────────
+        self.coord_label = QLabel("좌표: ( -, - )")
+        self.wp_label    = QLabel("WP : -")
+        layout.addWidget(self.coord_label)
+        layout.addWidget(self.wp_label)
+
+        # 200 ms마다 좌표/WP 갱신
+        self.update_timer = QTimer(self)
+        self.update_timer.timeout.connect(self.refresh_status)
+        self.update_timer.start(200)    
+
          # ─── 항상 위에 표시 ───────────────────────────────
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         # ─── 레이아웃·위젯 구성 끝난 뒤 한 틱 늦게 위치 이동 ─
         QTimer.singleShot(0, self.move_to_top_right)
 
+    # -----------------------------------------------------
+    def refresh_status(self):
+        """현재 좌표와 WP를 라벨에 표시"""
+        if not self.bot:                       # 아직 봇이 없으면 빈 값
+            self.coord_label.setText("좌표: ( -, - )")
+            self.wp_label.setText("WP : -")
+            return
 
+        # 1) 현재 좌표
+        pos = self.bot.minimap.current_position
+        if pos:
+            self.coord_label.setText(f"좌표: ({pos[0]}, {pos[1]})")
+        else:
+            self.coord_label.setText("좌표: ( -, - )")
+
+        # 2) 현재 WP
+        wp = self.bot.route.current_wp()
+        idx = self.bot.route.index
+        self.wp_label.setText(
+            f"WP#{idx}: x={wp['x']} y={wp['y']} ({wp['action']})"
+        )
 
     def move_to_top_right(self):
         screen_rect = QApplication.primaryScreen().availableGeometry()
@@ -82,12 +113,17 @@ class HunterUI(QWidget):
                          daemon=True).start()
 
         # 포션 관리자 켜려면 ↓ 주석 해제
-        # PotionManagerPath = "windows_png"
-        # threading.Thread(target=PotionManager(
-        #         PotionManagerPath + "/hp_bar_empty.png",
-        #         PotionManagerPath + "/mp_bar_empty.png"
-        #     ).loop,
-        #     daemon=True).start()
+        threading.Thread(
+        target=PotionManager(
+            "windows_png" + "/hp_bar_empty.png",
+            "windows_png" + "/mp_bar_empty.png",
+            bar_h_margin=2,      # 템플릿이 바 안쪽만 찍혔으면 0~2px 여유
+            bar_v_margin=0,
+            hp_thresh=0.6,       # 60 % 미만에서 사용
+            mp_thresh=0.6
+        ).loop,
+        daemon=True).start()
+    
 
         # --- 4) 메인 루프 스레드 시작 -------------------------------
         self.thread = BotThread(self.bot)   # BotThread 는 self.bot.run() 호출

@@ -1,8 +1,3 @@
-
-from multiprocessing import Queue
-from worker import MinimapWorker 
-
-from multiprocessing import Process, Queue
 import pygetwindow as gw
 import pyautogui
 import subprocess
@@ -15,10 +10,9 @@ import os
 import random
 import math
 import threading
-from PyQt5.QtGui import QImage
-from helper import in_rect
 from constant import route_ptrol
 from collections import deque
+from PyQt5.QtGui import QImage
 END_X = 1280
 END_Y = 720
 IMG_PATH = 'windows_png'
@@ -119,7 +113,7 @@ class MinimapTracker:
                 cx = max_loc[0] + me.shape[1] // 2 + x
                 cy = max_loc[1] + me.shape[0] // 2 + y
                 self.current_position = (cx, cy)
-                print(f"[INFO] 내 위치: {self.current_position}")
+                # print(f"[INFO] 내 위치: {self.current_position}")
             else:
                 self.current_position = None
             time.sleep(0.2)
@@ -127,30 +121,117 @@ class MinimapTracker:
 
 # ---------- 3. 물약 매니저 ----------
 class PotionManager:
-    def __init__(self, hp_img, mp_img, interval=1.5):
-        self.hp_img = cv2.imread(hp_img)
-        self.mp_img = cv2.imread(mp_img)
+    """
+    hp_bar.png / mp_bar.png :  바 안쪽(색이 채워지는 영역)을 포함한
+                              '한 덩어리' 템플릿.
+    bar_color(BGR)          :  HP=(  0,  0,255)  MP=(255,128, 0) 등
+    """
+    def __init__(self,
+                 hp_bar_png, mp_bar_png,
+                 bar_h_margin=0, bar_v_margin=0,
+                 hp_thresh=0.55, mp_thresh=0.55,
+                 interval=0.8):
+
+        self.hp_tpl = cv2.imread(hp_bar_png)
+        self.mp_tpl = cv2.imread(mp_bar_png)
+
+        self.hp_roi = None
+        self.mp_roi = None
+        self.margin_h = bar_h_margin   # ROI 좌우 여유(픽셀)
+        self.margin_v = bar_v_margin   # ROI 상하 여유(픽셀)
+        self.hp_th  = hp_thresh
+        self.mp_th  = mp_thresh
         self.interval = interval
-
-    def check(self):
+    def _debug_save_match(self, roi, name):
+        """
+        roi = (x1,y1,x2,y2)를 빨간 박스로 표시해 debug_<name>_*.png 저장
+        """
+        x1, y1, x2, y2 = roi
         with mss.mss() as sct:
-            screen = np.array(sct.grab({"left": int(0), "top": int(0), "width": int(END_X), "height": int(END_Y)}))[:, :, :3]
+            raw = np.array(sct.grab(
+                {"left": 0, "top": 0, "width": END_X, "height": END_Y}
+            ))[:, :, :3]
 
-        for img, key, label in [(self.hp_img, 'd', 'HP'), (self.mp_img, 'h', 'MP')]:
-            if img is not None:
-                res = cv2.matchTemplate(screen, img, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, _ = cv2.minMaxLoc(res)
-                if max_val > 0.8:
-                    pyautogui.press(key)
-                    print(f"[INFO] {label} 낮음 → 물약 사용")
+        frame = np.ascontiguousarray(raw)     # OpenCV 호환 레이아웃으로 변환
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
 
+        ts = time.strftime('%H%M%S')
+        fn = f"debug_{name}_{ts}.png"
+        cv2.imwrite(fn, frame)
+        print(f"[DEBUG] '{fn}' 저장됨 (ROI 시각화)")
+    # ──────────────────────────────────────────────
+    def _locate_bar_single(self, tpl, label):
+        """tpl 위치 한 번 찾고 ROI 반환"""
+        with mss.mss() as sct:
+            frame = np.array(sct.grab(
+                {"left":0, "top":0, "width":END_X, "height":END_Y}
+            ))[:, :, :3]
+
+        res = cv2.matchTemplate(frame, tpl, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        if max_val < 0.65:
+            print(f"[WARN] {label} 템플릿 max_val={max_val:.2f} (0.65 미만)")
+            return None                 # 매칭 신뢰도 부족
+
+        tx, ty = max_loc
+        h, w   = tpl.shape[:2]
+
+        # ROI = 템플릿 + margin
+        x1 = max(0, tx - self.margin_h)
+        y1 = max(0, ty - self.margin_v)
+        x2 = min(END_X, tx + w + self.margin_h)
+        y2 = min(END_Y, ty + h + self.margin_v)
+
+        # 디버그 PNG
+        self._debug_save_match((x1,y1,x2,y2), label)
+
+        return (x1, y1, x2, y2)
+
+    # ──────────────────────────────────────────────
+    def _ensure_rois(self):
+        if self.hp_roi is None:
+            self.hp_roi = self._locate_bar_single(self.hp_tpl, 'hp')
+        if self.mp_roi is None:
+            self.mp_roi = self._locate_bar_single(self.mp_tpl, 'mp')
+
+    # ──────────────────────────────────────────────
+    @staticmethod
+    def _fill_ratio(roi_bgr, filled_color, tol=60):
+        """가운데 1 px 라인에서 target 색상 비율"""
+        h, w, _ = roi_bgr.shape
+        line = roi_bgr[h//2, :, :]
+        diff = np.linalg.norm(line.astype(int) - filled_color, axis=1)
+        return (diff < tol).mean()
+
+    # ──────────────────────────────────────────────
+    def check(self):
+        self._ensure_rois()
+        if not (self.hp_roi and self.mp_roi):
+            return
+
+        with mss.mss() as sct:
+            rois = {}
+            for name, (x1,y1,x2,y2) in {"hp":self.hp_roi, "mp":self.mp_roi}.items():
+                rois[name] = np.array(sct.grab(
+                    {"left":x1, "top":y1, "width":x2-x1, "height":y2-y1}
+                ))[:, :, :3]
+
+        hp_pct = self._fill_ratio(rois["hp"], (0,0,255))       # HP: 빨강
+        mp_pct = self._fill_ratio(rois["mp"], (255,128,0))     # MP: 주황/파랑
+
+        if hp_pct < self.hp_th:
+            pyautogui.press('delete')
+            print(f"[POTION] HP {hp_pct*100:.0f}% → Del 사용")
+        if mp_pct < self.mp_th:
+            pyautogui.press('end')
+            print(f"[POTION] MP {mp_pct*100:.0f}% → End 사용")
+
+    # ──────────────────────────────────────────────
     def loop(self):
         while True:
             self.check()
             time.sleep(self.interval)
 
-
-# ---------- 4. 슬라임 탐지기 ----------
 class SlimeDetector:
     def __init__(self, folder):
         self.folder = folder
@@ -200,11 +281,11 @@ class SlimeHunterBot:
         self.route = RoutePatrol(route_ptrol)
          # 키 상태
         self.shift_down = self.left_down = self.right_down = self.z_down = False
-        self.current_dir = None
         self.running = True   
         self.paused  = False
         self.frame_emitter = None
         self.last_z_refresh = time.time()
+        self.was_attacking = False
 
     def drop_down(self):
         """↓+Alt 로 아래 플랫폼으로 내려가기"""
@@ -325,10 +406,34 @@ class SlimeHunterBot:
 
         if wp["action"] == "ladder":
             # 사다리는 x 정밀도만 중요 (+/-1px)
-            return dx == 0
+            return dx <= 6
         else:
             # 나머지는 x, y 모두 여유 있게
             return dx <= 6 and dy <= 6
+        
+    def sync_waypoint_to_y(self):
+        print("sync_waypoint_to_y")
+        """
+        현재 y와 가장 가까운 WP를 찾아 index를 재설정한다.
+        ① |y차|가 가장 작은 WP
+        ② (동점이면) |x차|가 더 작은 WP
+        """
+        if not self.minimap.current_position:
+            return
+
+        cx, cy = self.minimap.current_position
+
+        best_i = min(
+            range(len(self.route.waypoints)),
+            key=lambda i: (
+                abs(self.route.waypoints[i]["y"] - cy),   # ① y 차
+                abs(self.route.waypoints[i]["x"] - cx)    # ② x 차
+            )
+        )
+
+        if best_i != self.route.index:
+            self.route.index = best_i
+            print(f"[INFO] WP 재동기화(Y 기준) → #{best_i} (x:{cx}, y:{cy})")
 
     def run(self):
         threading.Thread(target=self.minimap.update_position, daemon=True).start()
@@ -341,9 +446,12 @@ class SlimeHunterBot:
             if time.time() - last_search > 0.5:
                 targets = self.detector.find()
                 last_search = time.time()
-                # if targets:
-                #     self.visualize(targets)
+                if targets:
+                    self.visualize(targets)
             char_pos = pyautogui.locateCenterOnScreen(IMG_PATH + "/charactor.png", confidence=0.55)
+
+            attack_now = False        # ★
+            
             if char_pos and targets:
                 closest = min(targets, key=lambda t: math.hypot(t[0]-char_pos[0],
                                                                 t[1]-char_pos[1]))
@@ -368,6 +476,7 @@ class SlimeHunterBot:
                     # (2) 공격키 유지
                     if not self.shift_down:
                         pyautogui.keyDown('shift'); self.shift_down = True
+                        attack_now = True
                         print("[INFO] 공격")
 
                     # (3) 대시(z)는 필요하면 취향대로 유지/해제
@@ -382,6 +491,11 @@ class SlimeHunterBot:
                         pyautogui.keyUp('shift'); self.shift_down = False
                         print("[INFO] 공격 중지")
             # (1) 공격 → 비공격 전환 순간에 WP 재선택
+            if self.was_attacking and not attack_now:
+                self.reselect_waypoint()
+
+            self.was_attacking = attack_now
+            
 
             # 3) 경로 순찰
             if not self.minimap.current_position:
@@ -395,13 +509,13 @@ class SlimeHunterBot:
                 self.drop_down()
                 time.sleep(0.25)              # 낙하 안정화
                 continue                      # 다음 loop 에서 다시 판단
+
+            elif target_y + 6 < cur_y :          
+                self.sync_waypoint_to_y()
             # 목표점에 도달했는지 확인 (오차 6픽셀)
             if self.reached(wp):
                 print('목표점에 도달')
                 # 이동키 해제
-                if self.left_down:  pyautogui.keyUp('left');  self.left_down  = False
-                if self.right_down: pyautogui.keyUp('right'); self.right_down = False
-                if self.z_down:     pyautogui.keyUp('z');     self.z_down     = False
                 
                 # 정점 액션 수행
                 self.do_action(act)
@@ -441,16 +555,17 @@ if __name__ == "__main__":
     bot = SlimeHunterBot()
     
     # bot.minimap.capture_minimap()
-    threading.Thread(target=bot.minimap.update_position, daemon=True).start()
-    # threading.Thread(target=MinimapTracker(
-    #     "windows_png" + "/minimap_topLeft.png",
-    #     "windows_png" + "/minimap_bottomRight.png",
-    #     "windows_png" + "/me.png"
-    # ).update_position, daemon=True).start()
 
-    # threading.Thread(target=PotionManager(
-    #     "windows_png" + "/hp_bar_empty.png",
-    #     "windows_png" + "/mp_bar_empty.png"
-    # ).loop, daemon=True).start()
+    threading.Thread(
+        target=PotionManager(
+            "windows_png" + "/hp_bar_empty.png",
+            "windows_png" + "/mp_bar_empty.png",
+            bar_h_margin=2,      # 템플릿이 바 안쪽만 찍혔으면 0~2px 여유
+            bar_v_margin=0,
+            hp_thresh=0.6,       # 60 % 미만에서 사용
+            mp_thresh=0.6
+        ).loop,
+        daemon=True
+    ).start()
     
     bot.run()
