@@ -288,7 +288,6 @@ class SlimeDetector:
 class SlimeHunterBot:
     def __init__(self):
         self.detector = SlimeDetector(IMG_PATH + "/monsters/henesisu")
-        # self.minimap = MinimapTracker("windows_png" + "/minimap_topLeft.png","windows_png" + "/minimap_bottomRight.png", "windows_png" + "/me.png")
         self.minimap = MinimapTracker(
             "windows_png" + "/minimap_topLeft.png",
             "windows_png" + "/minimap_bottomRight.png",
@@ -579,8 +578,8 @@ class SlimeHunterBot:
             if time.time() - last_search > 0.2:
                 targets = self.detector.find()
                 last_search = time.time()
-                # if targets:
-                #     self.visualize(targets)
+                if targets:
+                    self.visualize(targets)
             char_pos = self.find_char_pos()
             # try: 
             #     char_pos = pyautogui.locateCenterOnScreen(IMG_PATH + "/charactor.png", confidence=0.55)
@@ -636,6 +635,8 @@ class SlimeHunterBot:
                         print("[INFO] 같은 자리 10회 공격 → 강제 이동")
                         self.loger.info("[ATTACK] Same spot 10× → reselection")
                         pyautogui.keyUp('shift'); self.shift_down = False
+                        pyautogui.press("left")
+                        pyautogui.press("alt")
                         self.reselect_waypoint()
                         self.stuck_attack_cnt = 0
                         # ↑ 강제 이동 결정 후 곧바로 다음 루프
