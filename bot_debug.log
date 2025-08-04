@@ -1,10 +1,19 @@
-2025-08-04 15:08:40,157 [DEBUG] SlimeBot:258 ▶ [REACHED?] wp#0 dx=0.0 dy=4.0  → True
-2025-08-04 15:08:40,158 [INFO] SlimeBot:167 ▶ [LADDER] from y=136 → end_y=125
-2025-08-04 15:08:42,525 [DEBUG] SlimeBot:258 ▶ [REACHED?] wp#0 dx=8.0 dy=0.0  → False
-2025-08-04 15:08:42,525 [DEBUG] SlimeBot:104 ▶ [MOVE] cur_x= 65  target_x= 57  dx= -8
-2025-08-04 15:08:44,046 [DEBUG] SlimeBot:258 ▶ [REACHED?] wp#0 dx=1.0 dy=0.0  → True
-2025-08-04 15:08:44,046 [INFO] SlimeBot:167 ▶ [LADDER] from y=140 → end_y=125
-2025-08-04 15:08:47,666 [DEBUG] SlimeBot:258 ▶ [REACHED?] wp#0 dx=10.0 dy=0.0  → False
-2025-08-04 15:08:47,666 [DEBUG] SlimeBot:104 ▶ [MOVE] cur_x= 47  target_x= 57  dx=+10
-2025-08-04 15:08:49,134 [DEBUG] SlimeBot:258 ▶ [REACHED?] wp#0 dx=3.0 dy=0.0  → True
-2025-08-04 15:08:49,134 [INFO] SlimeBot:167 ▶ [LADDER] from y=140 → end_y=125
+2025-08-04 19:39:57,166 [DEBUG] SlimeBot:526 ▶ [REACHED?] wp#0 dx=16.0 dy=0.0  → False
+2025-08-04 19:39:57,166 [DEBUG] SlimeBot:369 ▶ [MOVE] cur_x= 41  target_x= 57  dx=+16
+2025-08-04 19:39:58,606 [DEBUG] SlimeBot:526 ▶ [REACHED?] wp#0 dx=6.0 dy=0.0  → True
+2025-08-04 19:39:58,606 [INFO] SlimeBot:433 ▶ [LADDER] from y=159 → end_y=144
+2025-08-04 19:40:04,432 [DEBUG] SlimeBot:526 ▶ [REACHED?] wp#1 dx=27.0 dy=0.0  → False
+2025-08-04 19:40:04,432 [DEBUG] SlimeBot:369 ▶ [MOVE] cur_x= 67  target_x= 94  dx=+27
+2025-08-04 19:40:07,515 [DEBUG] SlimeBot:526 ▶ [REACHED?] wp#1 dx=20.0 dy=0.0  → False
+2025-08-04 19:40:07,515 [DEBUG] SlimeBot:369 ▶ [MOVE] cur_x= 74  target_x= 94  dx=+20
+2025-08-04 19:40:09,076 [DEBUG] SlimeBot:526 ▶ [REACHED?] wp#1 dx=12.0 dy=0.0  → False
+2025-08-04 19:40:09,077 [DEBUG] SlimeBot:369 ▶ [MOVE] cur_x= 82  target_x= 94  dx=+12
+2025-08-04 19:40:13,311 [DEBUG] SlimeBot:526 ▶ [REACHED?] wp#1 dx=3.0 dy=0.0  → True
+2025-08-04 19:40:17,648 [DEBUG] SlimeBot:526 ▶ [REACHED?] wp#2 dx=18.0 dy=0.0  → False
+2025-08-04 19:40:17,648 [DEBUG] SlimeBot:369 ▶ [MOVE] cur_x= 98  target_x= 80  dx=-18
+2025-08-04 19:40:19,356 [DEBUG] SlimeBot:526 ▶ [REACHED?] wp#2 dx=12.0 dy=1.0  → False
+2025-08-04 19:40:19,356 [DEBUG] SlimeBot:369 ▶ [MOVE] cur_x= 92  target_x= 80  dx=-12
+2025-08-04 19:40:22,926 [DEBUG] SlimeBot:526 ▶ [REACHED?] wp#2 dx=3.0 dy=0.0  → True
+2025-08-04 19:40:22,926 [INFO] SlimeBot:433 ▶ [LADDER] from y=144 → end_y=129
+2025-08-04 19:40:30,814 [DEBUG] SlimeBot:526 ▶ [REACHED?] wp#3 dx=28.0 dy=0.0  → False
+2025-08-04 19:40:30,815 [DEBUG] SlimeBot:369 ▶ [MOVE] cur_x= 85  target_x= 57  dx=-28

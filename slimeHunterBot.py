@@ -19,7 +19,7 @@ from config import Config
 # ---------- 6. 메인 봇 ----------
 class SlimeHunterBot:
     def __init__(self):
-        self.detector = SlimeDetector(Config.IMG_PATH + "/monsters/henesisu")
+        self.detector = SlimeDetector(IMG_PATH + "/monsters/henesisu")
         self.minimap = MinimapTracker(
             "windows_png" + "/minimap_topLeft.png",
             "windows_png" + "/minimap_bottomRight.png",
@@ -35,7 +35,7 @@ class SlimeHunterBot:
         self.last_z_refresh = time.time()
         self.was_attacking = False
 
-        self.char_tpl  = cv2.imread(Config.IMG_PATH + "/charactor.png")
+        self.char_tpl  = cv2.imread(IMG_PATH + "/charactor.png")
         self.char_thresh  = 0.55
 
         self.stuck_attack_cnt = 0
@@ -164,16 +164,16 @@ class SlimeHunterBot:
             return True
 
         if wp["action"] == "ladder":
-            self.loger.info(f"[LADDER] from y={self.minimap.current_position[1]} "
-                     f"→ end_y={wp.get('end_y')}")
+            # self.loger.info(f"[LADDER] from y={self.minimap.current_position[1]} "
+            #          f"→ end_y={wp.get('end_y')}")
             
             if self.left_down: 
                 pyautogui.keyDown("left")
             else:
                 pyautogui.keyDown("right")
             print(f"[사다리-점프] 나의 X값: {me_x}, Target X값: {wp["x"]}")
-            pyautogui.press("alt")        # 사다리 붙기용 점프
-            pyautogui.keyDown("up")
+            # pyautogui.press("alt")        # 사다리 붙기용 점프
+            # pyautogui.keyDown("up")
 
             try:
                 target_y  = wp.get("end_y") if wp else None
@@ -216,6 +216,225 @@ class SlimeHunterBot:
                 pyautogui.keyUp("up")
                 pyautogui.keyUp("left")
                 pyautogui.keyUp("right")
+    # def visualize(self, detections):
+    # # ── 1. 현재 전체 화면 캡처 ───────────────────────────
+    #     with mss.mss() as sct:
+    #         monitor = {"top":0, "left":0, "width":END_X, "height":END_Y}
+    #         frame = np.array(sct.grab(monitor))[:, :, :3].copy()   # BGR
+
+    #     # ── 2. 슬라임 감지 결과 사각형 ------------------------
+    #     for (x, y) in detections:
+    #         cv2.rectangle(frame, (x-25, y-25), (x+25, y+25), (0, 0, 255), 2)
+
+    #     # ── 3. 경로 웨이포인트 표시 ---------------------------
+    #     for i, wp in enumerate(self.route.waypoints):
+    #         color = (0, 0, 255)                   # 전체: 빨간 점
+    #         radius = 2
+    #         if i == self.route.index:             # 현재 목표 WP
+    #             color = (0, 255, 255)             # 노란 점
+    #             radius = 4
+    #         cv2.circle(frame, (wp["x"], wp["y"]), radius, color, -1)
+
+    #     # ── 4. PyQt 라벨로 전송 -------------------------------
+    #     if self.frame_emitter is not None:
+    #         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    #         h, w, ch = rgb.shape
+    #         qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
+    #         self.frame_emitter.emit(qimg.copy())   # copy() 로 안전 전송
+
+
+
+    def reached(self, wp):
+        """웨이포인트에 도달했는지 여부를 반환"""
+        cx, cy = self.minimap.current_position
+        dx = abs(cx - wp["x"])
+        dy = abs(cy - wp["y"])
+        hit = False
+        if wp["action"] == "ladder":
+            # 사다리는 x 정밀도만 중요 (+/-1px)
+            tol = 1 if not (self.left_down or self.right_down) else 7
+            hit=  dx <= tol
+        else:
+            # 나머지는 x, y 모두 여유 있게
+            hit=  dx <= 6 and dy <= 6
+        self.loger.debug(f"[REACHED?] wp#{self.route.index} "
+                  f"dx={dx:.1f} dy={dy:.1f}  → {hit}")
+        return hit
+        
+    def sync_waypoint_to_y(self):
+        print("sync_waypoint_to_y")
+        """
+        현재 y와 가장 가까운 WP를 찾아 index를 재설정한다.
+        ① |y차|가 가장 작은 WP
+        ② (동점이면) |x차|가 더 작은 WP
+        """
+        if not self.minimap.current_position:
+            return
+
+        cx, cy = self.minimap.current_position
+
+        best_i = min(
+            range(len(self.route.waypoints)),
+            key=lambda i: (
+                abs(self.route.waypoints[i]["y"] - cy),   # ① y 차
+                abs(self.route.waypoints[i]["x"] - cx)    # ② x 차
+            )
+        )
+
+        if best_i != self.route.index:
+            self.route.index = best_i
+            self.loger.info(f"[WP] Y-sync → #{best_i}  cur_y={cy}")
+            print(f"[INFO] WP 재동기화(Y 기준) → #{best_i} (x:{cx}, y:{cy})")
+
+
+    def find_char_pos(self):
+        """찾으면 (x,y) 반환, 없으면 None"""
+        with mss.mss() as sct:
+            scr = np.array(sct.grab({
+                "left": 0, "top": 0, "width": END_X, "height": END_Y
+            }))[:, :, :3]
+        res = cv2.matchTemplate(scr, self.char_tpl, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        if max_val < self.char_thresh:
+            return None
+        h, w = self.char_tpl.shape[:2]
+        cx = max_loc[0] + w // 2
+        cy = max_loc[1] + h // 2
+        return (cx, cy)
+
+   
+    def __init__(self):
+        self.detector = SlimeDetector(Config.IMG_PATH + "/monsters/henesisu")
+        self.minimap = MinimapTracker(
+            "windows_png" + "/minimap_topLeft.png",
+            "windows_png" + "/minimap_bottomRight.png",
+            "windows_png" + "/me.png"
+        )
+        # self.terrain = TerrainNavigator()
+        self.route = RoutePatrol(route_ptrol)
+         # 키 상태
+        self.shift_down = self.left_down = self.right_down = self.z_down = False
+        self.running = True   
+        self.paused  = False
+        self.frame_emitter = None
+        self.last_z_refresh = time.time()
+        self.was_attacking = False
+
+        self.char_tpl  = cv2.imread(Config.IMG_PATH + "/charactor.png")
+        self.char_thresh  = 0.55
+
+        self.stuck_attack_cnt = 0
+        self.prev_char_pos    = None
+        self.loger = logging.getLogger("SlimeBot")      # 전역 로거 하나 잡아두기
+# 예: 더 자세히 보고 싶을 때
+        self.loger.setLevel(logging.DEBUG)      # DEBUG / INFO / WARNING / ERROR
+
+
+    def drop_down(self):
+        """↓+Alt 로 아래 플랫폼으로 내려가기"""
+        pyautogui.keyDown('down')
+        pyautogui.press('alt')       # 점프키 → 드랍
+        time.sleep(0.12)             # 짧게 눌렀다 떼기
+        pyautogui.keyUp('down')
+
+    def set_frame_emitter(self, emitter):
+        self.frame_emitter = emitter   # UI/스레드에서 연결해 줌
+
+    def stop(self):
+        self.running = False
+        self._release_all_keys()
+
+    def pause(self, flag: bool):
+        """True → 일시정지, False → 재개"""
+        self.paused = flag
+        if flag:
+            self._release_all_keys()
+
+    def _release_all_keys(self):
+        for k in ('left', 'right', 'up', 'down', 'z', 'shift'):
+            pyautogui.keyUp(k)
+        self.left_down = self.right_down = self.z_down = False
+    def keep_z_alive(self):
+        if not self.paused and time.time() - self.last_z_refresh >= 0.5:
+            pyautogui.keyDown('z'); self.z_down = True
+            self.last_z_refresh = time.time()
+
+    # ---------------- 새 함수 ----------------
+    def reselect_waypoint(self):
+        """현재 좌표에 가장 가까운 WP로 index 재설정"""
+        if not self.minimap.current_position:
+            return
+        mx, my = self.minimap.current_position
+        nearest = min(
+            range(len(self.route.waypoints)),
+            key=lambda i: math.hypot(
+                self.route.waypoints[i]["x"] - mx,
+                self.route.waypoints[i]["y"] - my
+            )
+        )
+        self.route.index = nearest
+        self.loger.info(f"[WP] Reselect → #{nearest}  (cur=({mx},{my}))")
+        print(f"[INFO] WP 재선택 → #{nearest}")
+
+    def _ensure_key(self, key, flag_attr):
+        """flag 값과 무관하게 매 사이클 keyDown을 한 번 더 보내 안전하게 유지"""
+        pyautogui.keyDown(key)
+        setattr(self, flag_attr, True)
+    # ----------------------------------------------------------------
+    def move_toward(self, target_x, action):
+        """목표 x 로 이동. action='ladder' 면 1픽셀, 나머지는 5픽셀 오차로 멈춘다"""
+        cur_x = self.minimap.current_position[0]
+        dx = target_x - cur_x
+        
+        self.loger.debug(f"[MOVE] cur_x={cur_x:3}  target_x={target_x:3}  dx={dx:+3}")
+        thresh = 1 if action == "ladder" else 5   # ★ 차별화
+
+        # ── 왼쪽 이동 ───────────────────────
+        if dx < -thresh:
+            if not self.left_down:
+                pyautogui.keyDown('up');
+                pyautogui.keyDown('left'); self.left_down = True
+                pyautogui.keyDown('z');    self.z_down   = True   # ★ 추가
+                self.loger.debug("  → LEFT Down")
+            if self.right_down:
+                pyautogui.keyUp('up');
+                pyautogui.keyUp('right'); self.right_down = False
+                
+
+        # ── 오른쪽 이동 ─────────────────────
+        elif dx > thresh:
+            if not self.right_down:
+                pyautogui.keyDown('up');
+                pyautogui.keyDown('right'); self.right_down = True
+                pyautogui.keyDown('z');    self.z_down   = True   # ★ 추가
+                self.loger.debug("  → RIGHT Down")
+            if self.left_down:
+                pyautogui.keyUp('up');
+                pyautogui.keyUp('left');  self.left_down = False
+
+        # if dx < -thresh:
+        #     pyautogui.keyDown('up');
+        #     self._ensure_key('left',  'left_down')
+        #     if self.right_down:
+        #         pyautogui.keyUp('right'); self.right_down = False
+        # elif dx > thresh:
+        #     pyautogui.keyDown('up');
+        #     self._ensure_key('right', 'right_down')
+        #     if self.left_down:
+        #         pyautogui.keyUp('left');  self.left_down  = False
+
+        # ── 오차 범위 안(정지) ───────────────
+        else:
+            if self.left_down or self.right_down:
+                self.loger.debug("  → STOP (x 오차 허용범위)")
+            if self.left_down:  pyautogui.keyUp('left');  self.left_down  = False
+            if self.right_down: pyautogui.keyUp('right'); self.right_down = False
+
+        # 대시(z) 유지
+        if not self.z_down:
+            pyautogui.keyDown('z'); self.z_down = True
+
+    
     def visualize(self, detections):
     # ── 1. 현재 전체 화면 캡처 ───────────────────────────
         with mss.mss() as sct:
@@ -242,22 +461,7 @@ class SlimeHunterBot:
             qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
             self.frame_emitter.emit(qimg.copy())   # copy() 로 안전 전송
 
-    def reached(self, wp):
-        """웨이포인트에 도달했는지 여부를 반환"""
-        cx, cy = self.minimap.current_position
-        dx = abs(cx - wp["x"])
-        dy = abs(cy - wp["y"])
-        hit = False
-        if wp["action"] == "ladder":
-            # 사다리는 x 정밀도만 중요 (+/-1px)
-            tol = 1 if not (self.left_down or self.right_down) else 7
-            hit=  dx <= tol
-        else:
-            # 나머지는 x, y 모두 여유 있게
-            hit=  dx <= 6 and dy <= 6
-        self.loger.debug(f"[REACHED?] wp#{self.route.index} "
-                  f"dx={dx:.1f} dy={dy:.1f}  → {hit}")
-        return hit
+  
         
     def sync_waypoint_to_y(self):
         print("sync_waypoint_to_y")

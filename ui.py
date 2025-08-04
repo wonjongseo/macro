@@ -4,11 +4,10 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import  QApplication, QWidget, QPushButton, QVBoxLayout, QLabel
 import sys, time
 from PyQt5.QtCore import Qt, QTimer
-from main import GameWindowController, PotionManager
+from main import GameWindowController, PotionManager, SlimeHunterBot
 from PyQt5.QtCore import QThread, pyqtSignal   # pyqtSignal 추가
 from PyQt5.QtGui import QImage 
 from config import Config
-from slimeHunterBot import SlimeHunterBot
 class BotThread(QThread):
     frame_ready = pyqtSignal(QImage)           # ▶ 메인 스레드로 보낼 신호
     fail_safe   = pyqtSignal() 
