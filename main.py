@@ -134,7 +134,8 @@ class PotionManager:
 
         self.hp_tpl = cv2.imread(hp_bar_png)
         self.mp_tpl = cv2.imread(mp_bar_png)
-
+        if self.hp_tpl is None or self.mp_tpl is None:
+            raise FileNotFoundError("HP/MP 템플릿을 읽지 못했습니다")
         self.hp_roi = None
         self.mp_roi = None
         self.margin_h = bar_h_margin   # ROI 좌우 여유(픽셀)
@@ -286,6 +287,13 @@ class SlimeHunterBot:
         self.last_z_refresh = time.time()
         self.was_attacking = False
 
+        self.char_tpl  = cv2.imread(IMG_PATH + "/charactor.png")
+        self.char_thresh  = 0.55
+
+        self.stuck_attack_cnt = 0
+        self.prev_char_pos    = None
+
+
     def drop_down(self):
         """↓+Alt 로 아래 플랫폼으로 내려가기"""
         pyautogui.keyDown('down')
@@ -341,17 +349,21 @@ class SlimeHunterBot:
         # ── 왼쪽 이동 ───────────────────────
         if dx < -thresh:
             if not self.left_down:
+                pyautogui.keyDown('up');
                 pyautogui.keyDown('left'); self.left_down = True
                 pyautogui.keyDown('z');    self.z_down   = True   # ★ 추가
             if self.right_down:
+                pyautogui.keyUp('up');
                 pyautogui.keyUp('right'); self.right_down = False
 
         # ── 오른쪽 이동 ─────────────────────
         elif dx > thresh:
             if not self.right_down:
+                pyautogui.keyDown('up');
                 pyautogui.keyDown('right'); self.right_down = True
                 pyautogui.keyDown('z');    self.z_down   = True   # ★ 추가
             if self.left_down:
+                pyautogui.keyUp('up');
                 pyautogui.keyUp('left');  self.left_down = False
 
         # ── 오차 범위 안(정지) ───────────────
@@ -364,17 +376,58 @@ class SlimeHunterBot:
             pyautogui.keyDown('z'); self.z_down = True
 
     # ----------------------------------------------------------------
-    def do_action(self, action):
-        print("엑션: ", action)
-        if action == "jump":
-            pyautogui.press('alt')              # 단순 점프
-        elif action == "ladder":
-            self.do_action('jump')              # 단순 점프
-            pyautogui.keyDown('up');
-            time.sleep(2);
-            pyautogui.keyUp('up')
+    def do_action(self,  wp=None):
+        if wp["action"] == "jump":
+            count = wp.get("count") if wp else 1
+            print('count' ,count)
+            for _ in range(count):
+                print("pyautogui.press()")
+                pyautogui.press("alt")
+                time.sleep(0.5)  
+            return True
 
-   
+        if wp["action"] == "ladder":
+            pyautogui.press("alt")        # 사다리 붙기용 점프
+            pyautogui.keyDown("up")
+
+            try:
+                target_y  = wp.get("end_y") if wp else None
+                start_t   = time.time()
+                max_wait  = 3.0            # ← 전역 타임아웃(초)
+                prev_cy   = None
+                stall_t   = time.time()
+
+                while True:
+                    pos = self.minimap.current_position
+                    if not pos:
+                        time.sleep(0.05)
+                        continue
+
+                    _, cy = pos
+
+                    # ── ① 목표 y 도달 ─────────────────────────
+                    if target_y is not None and cy <= target_y :
+                        return True
+
+                    # ── ② y 값이 변했는가? (정체 감지) ───────
+                    if prev_cy is None or abs(cy - prev_cy) > 1:
+                        prev_cy = cy
+                        stall_t = time.time()        # 움직임이 있으면 리셋
+
+                    # 0.6 s 동안 y 변화가 없으면 실패로 간주
+                    if time.time() - stall_t > 0.6:
+                        print("[WARN] 사다리 정체 → 중단")
+                        return False
+
+                    # ── ③ 전역 타임아웃 ──────────────────────
+                    if time.time() - start_t > max_wait:
+                        print("[WARN] 사다리 타임아웃 → 중단")
+                        return False
+
+                    time.sleep(0.05)
+
+            finally:
+                pyautogui.keyUp("up")
     def visualize(self, detections):
         with mss.mss() as sct:
             monitor = {"top": int(0), "left": int(0), "width": int(END_X), "height": int(END_Y)}
@@ -397,7 +450,7 @@ class SlimeHunterBot:
 
         if wp["action"] == "ladder":
             # 사다리는 x 정밀도만 중요 (+/-1px)
-            return dx <= 6
+            return dx <= 5
         else:
             # 나머지는 x, y 모두 여유 있게
             return dx <= 6 and dy <= 6
@@ -426,20 +479,40 @@ class SlimeHunterBot:
             self.route.index = best_i
             print(f"[INFO] WP 재동기화(Y 기준) → #{best_i} (x:{cx}, y:{cy})")
 
+
+    def find_char_pos(self):
+        """찾으면 (x,y) 반환, 없으면 None"""
+        with mss.mss() as sct:
+            scr = np.array(sct.grab({
+                "left": 0, "top": 0, "width": END_X, "height": END_Y
+            }))[:, :, :3]
+        res = cv2.matchTemplate(scr, self.char_tpl, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        if max_val < self.char_thresh:
+            return None
+        h, w = self.char_tpl.shape[:2]
+        cx = max_loc[0] + w // 2
+        cy = max_loc[1] + h // 2
+        return (cx, cy)
+
     def run(self):
         threading.Thread(target=self.minimap.update_position, daemon=True).start()
         last_search, targets = 0, []
-
         while self.running:
             if self.paused:
                 time.sleep(0.1)
                 continue
-            if time.time() - last_search > 0.5:
+            if time.time() - last_search > 0.25:
                 targets = self.detector.find()
                 last_search = time.time()
                 if targets:
                     self.visualize(targets)
-            char_pos = pyautogui.locateCenterOnScreen(IMG_PATH + "/charactor.png", confidence=0.55)
+            char_pos = self.find_char_pos()
+            # try: 
+            #     char_pos = pyautogui.locateCenterOnScreen(IMG_PATH + "/charactor.png", confidence=0.55)
+            # except pyautogui.ImageNotFoundException:
+            #     print("ERROR char_pos is not found")
+            #     char_pos = (END_X // 2, END_Y//2)
 
             attack_now = False        # ★
             
@@ -474,8 +547,29 @@ class SlimeHunterBot:
                     if self.z_down:
                         pyautogui.keyUp('z'); self.z_down = False
 
+                    # ────── ❶ 같은 자리 연속 공격 카운트 ───────────
+                    if self.prev_char_pos and char_pos:
+                        if math.hypot(char_pos[0]-self.prev_char_pos[0],
+                                    char_pos[1]-self.prev_char_pos[1]) < 3:
+                            self.stuck_attack_cnt += 1
+                        else:
+                            self.stuck_attack_cnt = 1
+                    else:
+                        self.stuck_attack_cnt = 1
+                    self.prev_char_pos = char_pos
+
+                    if self.stuck_attack_cnt >= 10:
+                        print("[INFO] 같은 자리 10회 공격 → 강제 이동")
+                        pyautogui.keyUp('shift'); self.shift_down = False
+                        self.reselect_waypoint()
+                        self.stuck_attack_cnt = 0
+                        # ↑ 강제 이동 결정 후 곧바로 다음 루프
+                        time.sleep(0.1)
+                        continue
+                    # ───────────────────────────────────────────────
+
                     time.sleep(0.1)
-                    continue
+                    continue          # ← 기존 continue (공격 유지 상태)
                 else:
                     # 사거리 밖 → 공격키 해제
                     if self.shift_down:
@@ -487,7 +581,6 @@ class SlimeHunterBot:
 
             self.was_attacking = attack_now
             
-
             # 3) 경로 순찰
             if not self.minimap.current_position:
                 time.sleep(0.1); continue      # 내 위치 못 찾으면 대기
@@ -506,15 +599,13 @@ class SlimeHunterBot:
             # 목표점에 도달했는지 확인 (오차 6픽셀)
             if self.reached(wp):
                 print('목표점에 도달')
-                # 이동키 해제
                 
-                # 정점 액션 수행
-                self.do_action(act)
+                self.do_action(wp)
                 self.route.advance()
 
                 if act == "ladder":
                     # 사다리 탄 뒤 충분히 대기 → 좌표 업데이트
-                    time.sleep(0.25)
+                    time.sleep(0.3)
 
                     # 다음 WP 와 내 y 좌표 비교
                     next_wp = self.route.current_wp()           # advance() 이후라 이미 다음 WP
@@ -538,8 +629,12 @@ class SlimeHunterBot:
                 self.keep_z_alive()
                 # 지형(낙사·사다리·점프) 즉시 대응
                 # self.terrain.act(self.minimap.current_position)
-           
+            
             time.sleep(0.15)
+
+
+
+
 if __name__ == "__main__":
     GameWindowController("MapleStory Worlds", END_X, END_Y).resize()
     time.sleep(0.5)
