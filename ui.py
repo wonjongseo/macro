@@ -10,6 +10,7 @@ from PyQt5.QtGui import QImage
 
 class BotThread(QThread):
     frame_ready = pyqtSignal(QImage)           # ▶ 메인 스레드로 보낼 신호
+    fail_safe   = pyqtSignal() 
 
     def __init__(self, bot):
         super().__init__()
@@ -17,7 +18,20 @@ class BotThread(QThread):
         self.bot.set_frame_emitter(self.frame_ready)  # ← emitter 등록
 
     def run(self):
-        self.bot.run()
+        import pyautogui, time
+        while True:                     # 끊길 때마다 재시작
+            try:
+                self.bot.run()          # ← SlimeHunterBot.run()
+                break                   # 정상 종료면 while 탈출
+            except pyautogui.FailSafeException:
+                self.fail_safe.emit()
+                # 1) 잠깐 Fail-safe 해제
+                pyautogui.FAILSAFE = False
+                try:
+                    self.bot._release_all_keys()
+                finally:
+                    pyautogui.FAILSAFE = True     # 2) 다시 켜 주기
+                time.sleep(1)           # 1초 쉬고 재시도
 
 class HunterUI(QWidget):
     def __init__(self):
@@ -129,6 +143,8 @@ class HunterUI(QWidget):
         self.thread = BotThread(self.bot)   # BotThread 는 self.bot.run() 호출
         # ▶ 디버그 프레임 수신 슬롯 연결
         self.thread.frame_ready.connect(self.update_debug_view)
+        self.thread.fail_safe.connect(self.on_fail_safe)
+
         self.thread.finished.connect(
             lambda: self.status.setText("상태: 종료됨"))
         self.thread.start() 
@@ -137,6 +153,11 @@ class HunterUI(QWidget):
         self.is_paused = False
         self.pause_btn.setText("Ⅱ Pause")
         self.status.setText("상태: 실행 중")
+
+    def on_fail_safe(self):
+        # 화면 오른쪽 위 라벨에 잠깐 표시
+        self.status.setText("Fail-safe! 1초 후 재개")
+        QTimer.singleShot(1500, lambda: self.status.setText("상태: 실행 중"))
 
     def update_debug_view(self, img: QImage):
         """디버그 프레임을 width-50 으로 줄여서 표시"""
