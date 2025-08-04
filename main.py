@@ -636,8 +636,10 @@ class SlimeHunterBot:
                         self.loger.info("[ATTACK] Same spot 3× → reselection")
                         self._release_all_keys()
                         # (2) 0.4초간 오른쪽으로 대시
-                        pyautogui.keyDown('right'); time.sleep(0.4)
+                        pyautogui.keyDown('right');
+                        pyautogui.keyDown('alt'); time.sleep(0.4)
                         pyautogui.keyUp('right')
+                        pyautogui.keyUp('alt')
                         self.reselect_waypoint()
                         self.stuck_attack_cnt = 0
                         # ↑ 강제 이동 결정 후 곧바로 다음 루프
@@ -657,6 +659,10 @@ class SlimeHunterBot:
                 self.reselect_waypoint()
 
             self.was_attacking = attack_now
+            if not attack_now and self.shift_down:
+                pyautogui.keyUp('shift')
+                self.shift_down = False
+                self.stuck_attack_cnt = 0 
             
             # 3) 경로 순찰
             if not self.minimap.current_position:
