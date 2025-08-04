@@ -16,6 +16,20 @@ from PyQt5.QtGui import QImage
 END_X = 1280
 END_Y = 720
 IMG_PATH = 'windows_png'
+
+import logging
+
+LOG_FMT = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d ▶ %(message)s"
+logging.basicConfig(
+    level=logging.INFO,                  # 전체 기본레벨
+    format=LOG_FMT,
+    handlers=[
+        logging.FileHandler("bot_debug.log", mode="w", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+
+
 # ---------- 1. 윈도우/맥 창 조절 ----------
 class GameWindowController:
 
@@ -295,6 +309,9 @@ class SlimeHunterBot:
 
         self.stuck_attack_cnt = 0
         self.prev_char_pos    = None
+        self.loger = logging.getLogger("SlimeBot")      # 전역 로거 하나 잡아두기
+# 예: 더 자세히 보고 싶을 때
+        self.loger.setLevel(logging.DEBUG)      # DEBUG / INFO / WARNING / ERROR
 
 
     def drop_down(self):
@@ -340,41 +357,60 @@ class SlimeHunterBot:
             )
         )
         self.route.index = nearest
+        self.loger.info(f"[WP] Reselect → #{nearest}  (cur=({mx},{my}))")
         print(f"[INFO] WP 재선택 → #{nearest}")
+
+    def _ensure_key(self, key, flag_attr):
+        """flag 값과 무관하게 매 사이클 keyDown을 한 번 더 보내 안전하게 유지"""
+        pyautogui.keyDown(key)
+        setattr(self, flag_attr, True)
     # ----------------------------------------------------------------
     def move_toward(self, target_x, action):
         """목표 x 로 이동. action='ladder' 면 1픽셀, 나머지는 5픽셀 오차로 멈춘다"""
         cur_x = self.minimap.current_position[0]
         dx = target_x - cur_x
-        print(f"현재 x값: {cur_x}, Target X값: {target_x}, 차이 : {dx}")
         
+        self.loger.debug(f"[MOVE] cur_x={cur_x:3}  target_x={target_x:3}  dx={dx:+3}")
         thresh = 1 if action == "ladder" else 5   # ★ 차별화
 
         # ── 왼쪽 이동 ───────────────────────
-        if dx < -thresh:
-            if not self.left_down:
-                pyautogui.keyDown('up');
-                pyautogui.keyDown('left'); self.left_down = True
-                pyautogui.keyDown('z');    self.z_down   = True   # ★ 추가
-            if self.right_down:
-                pyautogui.keyUp('up');
-                pyautogui.keyUp('right'); self.right_down = False
+        # if dx < -thresh:
+        #     if not self.left_down:
+        #         pyautogui.keyDown('up');
+        #         pyautogui.keyDown('left'); self.left_down = True
+        #         pyautogui.keyDown('z');    self.z_down   = True   # ★ 추가
+        #         self.loger.debug("  → LEFT Down")
+        #     if self.right_down:
+        #         pyautogui.keyUp('up');
+        #         pyautogui.keyUp('right'); self.right_down = False
+                
 
-        # ── 오른쪽 이동 ─────────────────────
+        # # ── 오른쪽 이동 ─────────────────────
+        # elif dx > thresh:
+        #     if not self.right_down:
+        #         pyautogui.keyDown('up');
+        #         pyautogui.keyDown('right'); self.right_down = True
+        #         pyautogui.keyDown('z');    self.z_down   = True   # ★ 추가
+        #         self.loger.debug("  → RIGHT Down")
+        #     if self.left_down:
+        #         pyautogui.keyUp('up');
+        #         pyautogui.keyUp('left');  self.left_down = False
+
+        if dx < -thresh:
+            pyautogui.keyDown('up');
+            self._ensure_key('left',  'left_down')
+            if self.right_down:
+                pyautogui.keyUp('right'); self.right_down = False
         elif dx > thresh:
-            if not self.right_down:
-                pyautogui.keyDown('up');
-                pyautogui.keyDown('right'); self.right_down = True
-                pyautogui.keyDown('z');    self.z_down   = True   # ★ 추가
+            pyautogui.keyDown('up');
+            self._ensure_key('right', 'right_down')
             if self.left_down:
-                pyautogui.keyUp('up');
-                pyautogui.keyUp('left');  self.left_down = False
+                pyautogui.keyUp('left');  self.left_down  = False
 
         # ── 오차 범위 안(정지) ───────────────
         else:
-            print(f'cur_x : {cur_x}')
-            print(f'target_x : {target_x}')
-            
+            if self.left_down or self.right_down:
+                self.loger.debug("  → STOP (x 오차 허용범위)")
             if self.left_down:  pyautogui.keyUp('left');  self.left_down  = False
             if self.right_down: pyautogui.keyUp('right'); self.right_down = False
 
@@ -389,7 +425,7 @@ class SlimeHunterBot:
         if wp["action"] == "jump":
             print(f"[점프] 나의 X값: {me_x}, Target X값: {wp["x"]}")
             count = wp.get("count") if wp else 1
-            print('count' ,count)
+            
             for _ in range(count):
                 print("pyautogui.press()")
                 pyautogui.press("alt")
@@ -397,6 +433,8 @@ class SlimeHunterBot:
             return True
 
         if wp["action"] == "ladder":
+            self.loger.info(f"[LADDER] from y={self.minimap.current_position[1]} "
+                     f"→ end_y={wp.get('end_y')}")
             
             if self.left_down: 
                 pyautogui.keyDown("left")
@@ -438,6 +476,7 @@ class SlimeHunterBot:
                     # ── ③ 전역 타임아웃 ──────────────────────
                     if time.time() - start_t > max_wait:
                         print("[WARN] 사다리 타임아웃 → 중단")
+                        self.loger.warning("    ↳ time-out while climbing")
                         return False
 
                     time.sleep(0.05)
@@ -477,14 +516,17 @@ class SlimeHunterBot:
         cx, cy = self.minimap.current_position
         dx = abs(cx - wp["x"])
         dy = abs(cy - wp["y"])
-
+        hit = False
         if wp["action"] == "ladder":
             # 사다리는 x 정밀도만 중요 (+/-1px)
             tol = 1 if not (self.left_down or self.right_down) else 7
-            return dx <= tol
+            hit=  dx <= tol
         else:
             # 나머지는 x, y 모두 여유 있게
-            return dx <= 6 and dy <= 6
+            hit=  dx <= 6 and dy <= 6
+        self.loger.debug(f"[REACHED?] wp#{self.route.index} "
+                  f"dx={dx:.1f} dy={dy:.1f}  → {hit}")
+        return hit
         
     def sync_waypoint_to_y(self):
         print("sync_waypoint_to_y")
@@ -508,6 +550,7 @@ class SlimeHunterBot:
 
         if best_i != self.route.index:
             self.route.index = best_i
+            self.loger.info(f"[WP] Y-sync → #{best_i}  cur_y={cy}")
             print(f"[INFO] WP 재동기화(Y 기준) → #{best_i} (x:{cx}, y:{cy})")
 
 
@@ -536,8 +579,8 @@ class SlimeHunterBot:
             if time.time() - last_search > 0.2:
                 targets = self.detector.find()
                 last_search = time.time()
-                if targets:
-                    self.visualize(targets)
+                # if targets:
+                #     self.visualize(targets)
             char_pos = self.find_char_pos()
             # try: 
             #     char_pos = pyautogui.locateCenterOnScreen(IMG_PATH + "/charactor.png", confidence=0.55)
@@ -589,8 +632,9 @@ class SlimeHunterBot:
                         self.stuck_attack_cnt = 1
                     self.prev_char_pos = char_pos
 
-                    if self.stuck_attack_cnt >= 10:
+                    if self.stuck_attack_cnt >= 3:
                         print("[INFO] 같은 자리 10회 공격 → 강제 이동")
+                        self.loger.info("[ATTACK] Same spot 10× → reselection")
                         pyautogui.keyUp('shift'); self.shift_down = False
                         self.reselect_waypoint()
                         self.stuck_attack_cnt = 0
