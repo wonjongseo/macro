@@ -250,29 +250,58 @@ class PotionManager:
 class SlimeDetector:
     def __init__(self, folder):
         self.folder = folder
-        self.templates = self.load_templates()
+        self.templates = self._load_templates()
 
-    def load_templates(self):
-        temp = []
+    # def load_templates(self):
+    #     temp = []
+    #     for f in os.listdir(self.folder):
+    #         path = os.path.join(self.folder, f)
+    #         img = cv2.imread(path)
+    #         if img is not None:
+    #             temp.append(img)
+    #             temp.append(cv2.flip(img, 1))
+    #     return temp
+
+    # def find(self):
+    #     with mss.mss() as sct:
+    #         screen = np.array(sct.grab({"left": 0, "top": 0, "width": Config.END_X, "height": Config.END_Y}))[:, :, :3]
+    #     found = []
+    #     for template in self.templates:
+    #         res = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
+    #         loc = np.where(res >= 0.7)
+    #         h, w = template.shape[:2]
+    #         for pt in zip(*loc[::-1]):
+    #             found.append((pt[0] + w // 2, pt[1] + h // 2))
+    #     return self.remove_duplicates(found)
+    def _load_templates(self):
+        """템플릿을 그레이스케일로만 읽어 두고, 좌우 반전본도 함께 저장"""
+        temps = []
         for f in os.listdir(self.folder):
-            path = os.path.join(self.folder, f)
-            img = cv2.imread(path)
-            if img is not None:
-                temp.append(img)
-                temp.append(cv2.flip(img, 1))
-        return temp
-
+            img = cv2.imread(os.path.join(self.folder, f), cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+            temps.append(img)
+            temps.append(cv2.flip(img, 1))   # 좌우 반전
+        return temps
     def find(self):
         with mss.mss() as sct:
-            screen = np.array(sct.grab({"left": 0, "top": 0, "width": Config.END_X, "height": Config.END_Y}))[:, :, :3]
+            raw = np.array(sct.grab({
+                "left": 0, "top": 0,
+                "width": Config.END_X,
+                "height": Config.END_Y
+            }))[:, :, :3]                        # BGR 컬러
+        screen = cv2.cvtColor(raw, cv2.COLOR_BGR2GRAY)  # → 그레이스케일
+
         found = []
         for template in self.templates:
+
             res = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
             loc = np.where(res >= 0.7)
             h, w = template.shape[:2]
             for pt in zip(*loc[::-1]):
                 found.append((pt[0] + w // 2, pt[1] + h // 2))
         return self.remove_duplicates(found)
+    
 
     def remove_duplicates(self, pts, threshold=20):
         unique = []
@@ -575,7 +604,7 @@ class SlimeHunterBot:
             if self.paused:
                 time.sleep(0.1)
                 continue
-            if time.time() - last_search > 0.2:
+            if time.time() - last_search > 0.15:
                 targets = self.detector.find()
                 last_search = time.time()
                 if targets:
