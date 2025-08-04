@@ -3,7 +3,7 @@ import os
 import cv2
 import mss
 import numpy as np
-
+from config import Config
 
 
 class SlimeDetector:
@@ -23,7 +23,7 @@ class SlimeDetector:
 
     def find(self):
         with mss.mss() as sct:
-            screen = np.array(sct.grab({"left": 0, "top": 0, "width": END_X, "height": END_Y}))[:, :, :3]
+            screen = np.array(sct.grab({"left": 0, "top": 0, "width": Config.END_X, "height": Config.END_Y}))[:, :, :3]
         found = []
         for template in self.templates:
             res = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)

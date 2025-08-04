@@ -4,9 +4,11 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import  QApplication, QWidget, QPushButton, QVBoxLayout, QLabel
 import sys, time
 from PyQt5.QtCore import Qt, QTimer
-from main import END_X, END_Y, GameWindowController, PotionManager, SlimeHunterBot
+from main import GameWindowController, PotionManager
 from PyQt5.QtCore import QThread, pyqtSignal   # pyqtSignal 추가
 from PyQt5.QtGui import QImage 
+from config import Config
+from slimeHunterBot import SlimeHunterBot
 class BotThread(QThread):
     frame_ready = pyqtSignal(QImage)           # ▶ 메인 스레드로 보낼 신호
     fail_safe   = pyqtSignal() 
@@ -112,7 +114,7 @@ class HunterUI(QWidget):
             return
 
         # --- 1) 게임 창 사이즈 조정 ---------------------------------
-        GameWindowController("MapleStory Worlds", END_X, END_Y).resize()
+        GameWindowController("MapleStory Worlds", Config.END_X, Config.END_Y).resize()
         time.sleep(0.5)
 
         # --- 2) 봇 인스턴스 생성 ------------------------------------

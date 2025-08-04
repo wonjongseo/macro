@@ -6,15 +6,14 @@ import cv2
 import mss
 import numpy as np
 import pyautogui
-
-
+from config import Config
 
 class MinimapTracker:
     def __init__(self, top_left_img, bottom_right_img, me_img):
         self.top_left_img = top_left_img
         self.bottom_right_img = bottom_right_img
         self.me_img = me_img
-        self.minimap_area = (0, 0, END_X, END_Y)
+        self.minimap_area = (0, 0, Config.END_X, Config.END_Y)
         self.current_position = None
 
     def capture_minimap(self):
