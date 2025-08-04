@@ -4,7 +4,6 @@ import cv2
 import mss
 import numpy as np
 
-from main import END_X, END_Y
 
 
 class SlimeDetector:

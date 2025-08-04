@@ -1,7 +1,8 @@
-# import pyautogui
+import pyautogui
 
-# while True:
-#     pyautogui.press("alt")
+while True:
+    pyautogui.keyDown("up")
+    pyautogui.keyDown("right")
 
     
 # import cv2

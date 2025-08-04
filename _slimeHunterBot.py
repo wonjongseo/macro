@@ -11,7 +11,7 @@ from PyQt5.QtGui import QImage
 from me import MinimapTracker
 from slimeDetector import SlimeDetector
 
-from main import END_X, END_Y, IMG_PATH, RoutePatrol
+from main import END_X, END_Y, IMG_PATH
 # ---------- 6. 메인 봇 ----------
 class SlimeHunterBot:
     def __init__(self):

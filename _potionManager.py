@@ -3,9 +3,8 @@ import time
 import cv2
 import mss
 import numpy as np
-from constant import route_ptrol
-
 from main import END_X, END_Y
+
 
 # ---------- 3. 물약 매니저 ----------
 

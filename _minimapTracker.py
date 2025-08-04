@@ -7,7 +7,6 @@ import mss
 import numpy as np
 import pyautogui
 
-from main import END_X, END_Y
 
 
 class MinimapTracker:

@@ -7,7 +7,6 @@ from PyQt5.QtCore import Qt, QTimer
 from main import END_X, END_Y, GameWindowController, PotionManager, SlimeHunterBot
 from PyQt5.QtCore import QThread, pyqtSignal   # pyqtSignal 추가
 from PyQt5.QtGui import QImage 
-
 class BotThread(QThread):
     frame_ready = pyqtSignal(QImage)           # ▶ 메인 스레드로 보낼 신호
     fail_safe   = pyqtSignal() 
@@ -39,7 +38,7 @@ class HunterUI(QWidget):
         self.setWindowTitle("Slime Hunter Controller")
         self.bot = None
         self.thread = None
-        # ----- 버튼 -----
+        # ----- 버튼 -----dx
         self.start_btn  = QPushButton("▶ Start")
         self.pause_btn  = QPushButton("Ⅱ Pause")
         self.stop_btn   = QPushButton("■ Stop")
