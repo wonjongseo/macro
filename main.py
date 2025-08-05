@@ -303,26 +303,7 @@ class SlimeHunterBot:
     def _release_all_keys(self):
         for k in ('shift', 'left', 'right', 'up', 'down', 'z'):
             pyautogui.keyUp(k)
-        self.shift_down = self.left_down = self.right_down = self.up_down = False
-   
-
-    # ---------------- 새 함수 ----------------
-    def reselect_waypoint(self):
-        """현재 좌표에 가장 가까운 WP로 index 재설정"""
-        if not self.minimap.current_position:
-            return
-        mx, my = self.minimap.current_position
-        nearest = min(
-            range(len(self.route.waypoints)),
-            key=lambda i: math.hypot(
-                self.route.waypoints[i]["x"] - mx,
-                self.route.waypoints[i]["y"] - my
-            )
-        )
-        self.route.index = nearest
-        self.loger.info(f"[WP] Reselect → #{nearest}  (cur=({mx},{my}))")
-        print(f"[INFO] WP 재선택 → #{nearest}")
-
+        self.shift_down = self.left_down = self.right_down = self.up_down = False     
     def _ensure_key(self, key, flag_attr, value):
         if value:  
             pyautogui.keyDown(key)
@@ -377,7 +358,6 @@ class SlimeHunterBot:
         if wp["action"] == "ladder":
             self.loger.info(f"[LADDER] from y={self.minimap.current_position[1]} "
                      f"→ end_y={wp.get('end_y')}")
-            
             if self.shift_down:
                 self._ensure_key('shift',  'shift_down', False)
                 return
@@ -385,7 +365,7 @@ class SlimeHunterBot:
                 self._ensure_key('left',  'left_down', True)
             else:
                 self._ensure_key('right',  'right_down', True)
-            print(f"[사다리-점프] 나의 X값: {me_x}, Target X값: {wp["x"]}")
+            
             pyautogui.press("alt")        # 사다리 붙기용 점프
             self._ensure_key('up',  'up_down', True)
 
@@ -472,7 +452,8 @@ class SlimeHunterBot:
         self.loger.debug(f"[REACHED?] wp#{self.route.index} "
                   f"dx={dx:.1f} dy={dy:.1f}  → {hit}")
         return hit
-        
+    
+    
     def sync_waypoint_to_y(self):
         print("sync_waypoint_to_y")
         """
@@ -528,7 +509,6 @@ class SlimeHunterBot:
                 last_search = time.time()
                 if targets:
                     self.visualize(targets)
-           
             try: 
                 char_pos = self.find_char_pos()
             except:
@@ -549,28 +529,19 @@ class SlimeHunterBot:
                         self._ensure_key('left',  'left_down', True)
                         time.sleep(0.1)
                         self._ensure_key('left',  'left_down', False)
-                        # if not self.left_down:
-                        #     self._ensure_key('left',  'left_down', True)
-                        # if self.right_down:
-                        #     self._ensure_key('right',  'right_down', False)
+                       
                     else: 
                         self._ensure_key('right',  'right_down', True)
                         time.sleep(0.1)
                         self._ensure_key('right',  'right_down', False)
-                        # if not self.right_down:
-                        
-                        #     self._ensure_key('right',  'right_down', True)
-                        # if self.left_down:
-                        #     self._ensure_key('left',  'left_down', False)
-                    # ───────────────────────────────────────
 
                     # (2) 공격키 유지
                     if not self.shift_down:
                         self._ensure_key('z',  'z_down', False)
+                        self._ensure_key('up',  'up_down', False)
                         self._ensure_key('shift',  'shift_down', True)
                         attack_now = True
                         print("[INFO] 공격")
-
 
                     # ────── ❶ 같은 자리 연속 공격 카운트 ───────────
                     if self.prev_char_pos and char_pos:
@@ -593,7 +564,8 @@ class SlimeHunterBot:
                         self._ensure_key('right',  'right_down', False)
                         pyautogui.keyUp('alt')
                         self._ensure_key('z',  'z_down', False)
-                        self.reselect_waypoint()
+                        self.sync_waypoint_to_y()
+                        # self.reselect_waypoint()
                         self.stuck_attack_cnt = 0
                         # ↑ 강제 이동 결정 후 곧바로 다음 루프
                         time.sleep(0.1)
@@ -609,8 +581,9 @@ class SlimeHunterBot:
                         self._ensure_key('z',  'z_down', True)
                         print("[INFO] 공격 중지")
             # (1) 공격 → 비공격 전환 순간에 WP 재선택
-            if self.was_attacking and not attack_now:
-                self.reselect_waypoint()
+            if  self.was_attacking and not attack_now and not self.up_down:
+                # self.reselect_waypoint()
+                self.sync_waypoint_to_y()
 
             self.was_attacking = attack_now
             if not attack_now and self.shift_down:
@@ -632,39 +605,17 @@ class SlimeHunterBot:
                 time.sleep(0.25)              # 낙하 안정화
                 continue                      # 다음 loop 에서 다시 판단
 
-            elif target_y + 6 < cur_y :          
+            elif target_y + 6 < cur_y :  
                 self.sync_waypoint_to_y()
 
             if self.reached(wp):
                 self.do_action(wp)
                 self.route.advance()
 
-                if act == "ladder":
-                    # 사다리 탄 뒤 충분히 대기 → 좌표 업데이트
-                    # time.sleep(0.3)
-
-                    # 다음 WP 와 내 y 좌표 비교
-                    next_wp = self.route.current_wp()           # advance() 이후라 이미 다음 WP
-                    cy = self.minimap.current_position[1]
-                    dy = abs(cy - next_wp["y"])
-
-                    if dy > 6:          # y 차이가 크면 아직 못 올라간 것
-                        print("[WARN] 사다리 실패, 재시도")
-                        # index 를 이전 WP(사다리)로 되돌림
-                        self.route.index = (self.route.index - 1) % len(self.route.waypoints)
-                        # 키 상태 초기화(혹시 up 키가 남아 있으면)
-                        self._ensure_key('up',  'up_down', False)
-                        # 살짝 쉬고 다음 loop 에서 다시 ladder 시도
-                        time.sleep(0.1)
-                        continue
-
-                time.sleep(0.2)
+          
             else:
-                print("목표 x 쪽으로 걷기, ", target_x)
                 self.move_toward(target_x, act)
-                # 지형(낙사·사다리·점프) 즉시 대응
-                # self.terrain.act(self.minimap.current_position)
-            
+             
             time.sleep(0.15)
 
 

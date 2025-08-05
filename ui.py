@@ -140,7 +140,6 @@ class HunterUI(QWidget):
         time.sleep(0.5)
         # --- 2) 봇 인스턴스 생성 ------------------------------------
         self.bot = SlimeHunterBot()
-
         # --- 3) 보조 스레드들 ---------------------------------------
         threading.Thread(target=self.bot.minimap.update_position,
                          daemon=True).start()
