@@ -4,10 +4,11 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import  QApplication, QWidget, QPushButton, QVBoxLayout, QLabel
 import sys, time
 from PyQt5.QtCore import Qt, QTimer
-from main import GameWindowController, PotionManager, SlimeHunterBot
+from main import GameWindowController, SlimeHunterBot
 from PyQt5.QtCore import QThread, pyqtSignal   # pyqtSignal 추가
 from PyQt5.QtGui import QImage 
 from config import Config
+from potionManager import PotionManager
 class BotThread(QThread):
     frame_ready = pyqtSignal(QImage)           # ▶ 메인 스레드로 보낼 신호
     fail_safe   = pyqtSignal() 
@@ -41,20 +42,19 @@ class HunterUI(QWidget):
         self.thread = None
         # ----- 버튼 -----dx
         self.start_btn  = QPushButton("▶ Start")
-        self.pause_btn  = QPushButton("Ⅱ Pause")
+        
         self.stop_btn   = QPushButton("■ Stop")
         self.status     = QLabel("상태: 대기 중")
 
         self.start_btn.clicked.connect(self.start_bot)
-        self.pause_btn.clicked.connect(self.toggle_pause)
         self.stop_btn.clicked.connect(self.stop_bot)
 
         layout = QVBoxLayout(self)
-        for w in (self.start_btn, self.pause_btn, self.stop_btn, self.status):
+        self.resize(300,400)
+        for w in (self.start_btn, self.stop_btn, self.status):
             layout.addWidget(w)
 
-        self.is_paused = False
-       
+               
 
         self.debug_label = QLabel("Debug View")
         self.debug_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
@@ -67,6 +67,12 @@ class HunterUI(QWidget):
         layout.addWidget(self.coord_label)
         layout.addWidget(self.wp_label)
 
+        self.debug_mode = True
+        self.debug_toggle_btn = QPushButton("디버그 모드 꺼기")
+        self.debug_toggle_btn.clicked.connect(self.toggle_debug_mode)
+        layout.addWidget(self.debug_toggle_btn)
+
+        
         # 200 ms마다 좌표/WP 갱신
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.refresh_status)
@@ -76,7 +82,26 @@ class HunterUI(QWidget):
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         # ─── 레이아웃·위젯 구성 끝난 뒤 한 틱 늦게 위치 이동 ─
         QTimer.singleShot(0, self.move_to_top_right)
+    def toggle_debug_mode(self):
+        """디버그 모드를 켜거나 끕니다."""
+        if not self.thread:
+            return
 
+        if self.debug_mode:
+            # → 디버그 끄기
+            try:
+                self.thread.frame_ready.disconnect(self.update_debug_view)
+            except TypeError:
+                pass
+            self.update_timer.stop()
+            self.debug_toggle_btn.setText("디버그 모드 켜기")
+        else:
+            # → 디버그 켜기
+            self.thread.frame_ready.connect(self.update_debug_view)
+            self.update_timer.start(200)
+            self.debug_toggle_btn.setText("디버그 모드 끄기")
+
+        self.debug_mode = not self.debug_mode
     # -----------------------------------------------------
     def refresh_status(self):
         """현재 좌표와 WP를 라벨에 표시"""
@@ -107,25 +132,18 @@ class HunterUI(QWidget):
         self.move(x, y)
     # ---------- 슬롯 ----------
     def start_bot(self):
-        # 이미 실행 중이면 무시
         if self.thread and self.thread.isRunning():
             self.status.setText("이미 실행 중")
             return
-
         # --- 1) 게임 창 사이즈 조정 ---------------------------------
         GameWindowController("MapleStory Worlds", Config.END_X, Config.END_Y).resize()
         time.sleep(0.5)
-
         # --- 2) 봇 인스턴스 생성 ------------------------------------
         self.bot = SlimeHunterBot()
-
-        # 필요하면 한 번만 미니맵 캡처
-        # self.bot.minimap.capture_minimap()
 
         # --- 3) 보조 스레드들 ---------------------------------------
         threading.Thread(target=self.bot.minimap.update_position,
                          daemon=True).start()
-
         # 포션 관리자 켜려면 ↓ 주석 해제
         threading.Thread(
         target=PotionManager(
@@ -138,20 +156,15 @@ class HunterUI(QWidget):
         ).loop,
         daemon=True).start()
     
-
         # --- 4) 메인 루프 스레드 시작 -------------------------------
         self.thread = BotThread(self.bot)   # BotThread 는 self.bot.run() 호출
         # ▶ 디버그 프레임 수신 슬롯 연결
         self.thread.frame_ready.connect(self.update_debug_view)
         self.thread.fail_safe.connect(self.on_fail_safe)
 
-        self.thread.finished.connect(
-            lambda: self.status.setText("상태: 종료됨"))
+        self.thread.finished.connect(lambda: self.status.setText("상태: 종료됨"))
         self.thread.start() 
 
-        # --- 5) UI 표시 --------------------------------------------
-        self.is_paused = False
-        self.pause_btn.setText("Ⅱ Pause")
         self.status.setText("상태: 실행 중")
 
     def on_fail_safe(self):
@@ -174,13 +187,6 @@ class HunterUI(QWidget):
         self.debug_label.setFixedSize(pix.size())   # 라벨 크기도 맞춤
         QTimer.singleShot(0, self.move_to_top_right)
 
-    def toggle_pause(self):
-        if not (self.bot and self.thread and self.thread.isRunning()):
-            return
-        self.is_paused = not self.is_paused
-        self.bot.pause(self.is_paused)
-        self.pause_btn.setText("▶ Resume" if self.is_paused else "Ⅱ Pause")
-        self.status.setText("상태: 일시정지" if self.is_paused else "상태: 실행 중")
 
     def stop_bot(self):
         if self.bot:

@@ -15,6 +15,8 @@ from collections import deque
 from PyQt5.QtGui import QImage
 from config import Config
 import logging
+import pygame
+from potionManager import PotionManager
 
 LOG_FMT = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d ▶ %(message)s"
 logging.basicConfig(
@@ -26,6 +28,9 @@ logging.basicConfig(
     ]
 )
 
+
+pygame.mixer.init()
+pygame.mixer.music.load("alerts/siren.mp3")
 # ---------- 1. 윈도우/맥 창 조절 ----------
 class GameWindowController:
     def __init__(self, title, width, height):
@@ -68,12 +73,6 @@ class GameWindowController:
 class RoutePatrol:
     """사용자가 미리 정한 경로를 무한 반복한다."""
     def __init__(self, waypoints):
-        """
-        waypoints: list of dicts
-            [{ "x":100, "y":120, "action":"move"   },
-             { "x":300, "y":120, "action":"jump"   },
-             { "x": 57, "y":140, "action":"ladder" }]
-        """
         self.waypoints = waypoints
         self.index = 0
 
@@ -98,6 +97,9 @@ class MinimapTracker:
         # UI 로 보낼 콜백
         self._emit_minimap_img = minimap_emitter
         self._emit_position    = pos_emitter
+
+        self.other_detected = False
+        self.cnt_found_other = 0
 
     
     def capture_minimap(self):
@@ -145,8 +147,43 @@ class MinimapTracker:
                 self._emit_position(self.current_position)
             time.sleep(0.2)
 
+    def find_other_position(self):
+        other_img = cv2.imread("windows_png/other.png")
+        if other_img is None:
+            print("Error: other_img 파일을 읽을 수 없습니다.")
+            return
+        
+        while True:
+            with mss.mss() as sct:
+                x, y, w, h = self.minimap_area
+                monitor = {"left": x, "top": y, "width": w, "height": h}
+                screen = np.array(sct.grab(monitor))[:, :, :3]  # BGR 컬러
 
-    def capture_minimap(self):
+            # 이미지 타입과 채널 맞추기
+            if other_img.shape[2] != 3:
+                other_img = cv2.cvtColor(other_img, cv2.COLOR_GRAY2BGR)
+            
+            if screen.dtype != other_img.dtype:
+                other_img = other_img.astype(screen.dtype)
+
+            result = cv2.matchTemplate(screen, other_img, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, _ = cv2.minMaxLoc(result)
+
+            if max_val >= 0.7:
+                self.cnt_found_other += 1
+                if self.cnt_found_other == 3:
+                    pygame.mixer.music.play(-1)
+                self.other_detected = True
+            else:
+                if self.cnt_found_other > 0:
+                    self.cnt_found_other -= 1
+                else:
+                    pygame.mixer.music.stop()
+                if self.cnt_found_other == 0:
+                    self.other_detected = False
+            time.sleep(3)
+
+    def capturing_minimap(self):
         tl = pyautogui.locateOnScreen(self.top_left_img, confidence=0.8)
         br = pyautogui.locateOnScreen(self.bottom_right_img, confidence=0.8)
         if not tl or not br:
@@ -171,118 +208,6 @@ class MinimapTracker:
             self._emit_minimap_img(qimg.copy())
 
 # ---------- 3. 물약 매니저 ----------
-class PotionManager:
-    """
-    hp_bar.png / mp_bar.png :  바 안쪽(색이 채워지는 영역)을 포함한
-                              '한 덩어리' 템플릿.
-    bar_color(BGR)          :  HP=(  0,  0,255)  MP=(255,128, 0) 등
-    """
-    def __init__(self,
-                 hp_bar_png, mp_bar_png,
-                 bar_h_margin=0, bar_v_margin=0,
-                 hp_thresh=0.55, mp_thresh=0.55,
-                 interval=0.8):
-
-        self.hp_tpl = cv2.imread(hp_bar_png)
-        self.mp_tpl = cv2.imread(mp_bar_png)
-        if self.hp_tpl is None or self.mp_tpl is None:
-            raise FileNotFoundError("HP/MP 템플릿을 읽지 못했습니다")
-        self.hp_roi = None
-        self.mp_roi = None
-        self.margin_h = bar_h_margin   # ROI 좌우 여유(픽셀)
-        self.margin_v = bar_v_margin   # ROI 상하 여유(픽셀)
-        self.hp_th  = hp_thresh
-        self.mp_th  = mp_thresh
-        self.interval = interval
-    def _debug_save_match(self, roi, name):
-        """
-        roi = (x1,y1,x2,y2)를 빨간 박스로 표시해 debug_<name>_*.png 저장
-        """
-        x1, y1, x2, y2 = roi
-        with mss.mss() as sct:
-            raw = np.array(sct.grab(
-                {"left": 0, "top": 0, "width": Config.END_X, "height": Config.END_Y}
-            ))[:, :, :3]
-
-        frame = np.ascontiguousarray(raw)     # OpenCV 호환 레이아웃으로 변환
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-
-        fn = f"debug_{name}.png"
-        cv2.imwrite(fn, frame)
-        print(f"[DEBUG] '{fn}' 저장됨 (ROI 시각화)")
-    # ──────────────────────────────────────────────
-    def _locate_bar_single(self, tpl, label):
-        """tpl 위치 한 번 찾고 ROI 반환"""
-        with mss.mss() as sct:
-            frame = np.array(sct.grab(
-                {"left":0, "top":0, "width":Config.END_X, "height": Config.END_Y}
-            ))[:, :, :3]
-
-        res = cv2.matchTemplate(frame, tpl, cv2.TM_CCOEFF_NORMED)
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-        if max_val < 0.65:
-            print(f"[WARN] {label} 템플릿 max_val={max_val:.2f} (0.65 미만)")
-            return None                 # 매칭 신뢰도 부족
-
-        tx, ty = max_loc
-        h, w   = tpl.shape[:2]
-
-        # ROI = 템플릿 + margin
-        x1 = max(0, tx - self.margin_h)
-        y1 = max(0, ty - self.margin_v)
-        x2 = min(Config.END_X, tx + w + self.margin_h)
-        y2 = min(Config.END_Y, ty + h + self.margin_v)
-
-        # 디버그 PNG
-        self._debug_save_match((x1,y1,x2,y2), label)
-
-        return (x1, y1, x2, y2)
-
-    # ──────────────────────────────────────────────
-    def _ensure_rois(self):
-        if self.hp_roi is None:
-            self.hp_roi = self._locate_bar_single(self.hp_tpl, 'hp')
-        if self.mp_roi is None:
-            self.mp_roi = self._locate_bar_single(self.mp_tpl, 'mp')
-
-    # ──────────────────────────────────────────────
-    @staticmethod
-    def _fill_ratio(roi_bgr, filled_color, tol=60):
-        """가운데 1 px 라인에서 target 색상 비율"""
-        h, w, _ = roi_bgr.shape
-        line = roi_bgr[h//2, :, :]
-        diff = np.linalg.norm(line.astype(int) - filled_color, axis=1)
-        return (diff < tol).mean()
-
-    # ──────────────────────────────────────────────
-    def check(self):
-        self._ensure_rois()
-        if not (self.hp_roi and self.mp_roi):
-            return
-
-        with mss.mss() as sct:
-            rois = {}
-            for name, (x1,y1,x2,y2) in {"hp":self.hp_roi, "mp":self.mp_roi}.items():
-                rois[name] = np.array(sct.grab(
-                    {"left":x1, "top":y1, "width":x2-x1, "height":y2-y1}
-                ))[:, :, :3]
-
-        hp_pct = self._fill_ratio(rois["hp"], (0,0,255))       # HP: 빨강
-        mp_pct = self._fill_ratio(rois["mp"], (255,128,0))     # MP: 주황/파랑
-
-        if hp_pct < self.hp_th:
-            pyautogui.press('delete')
-            print(f"[POTION] HP {hp_pct*100:.0f}% → Del 사용")
-        if mp_pct < self.mp_th:
-            pyautogui.press('end')
-            print(f"[POTION] MP {mp_pct*100:.0f}% → End 사용")
-
-    # ──────────────────────────────────────────────
-    def loop(self):
-        while True:
-            self.check()
-            time.sleep(self.interval)
-
 
 
 class SlimeDetector:
@@ -416,7 +341,6 @@ class SlimeHunterBot:
         thresh = 1 if action == "ladder" else 5   # ★ 차별화
         
         self._ensure_key('z',  'z_down', True)
-        print(f'self.z_down : {self.z_down}')
         
         if dx < -thresh:
             self._ensure_key('left',  'left_down', True)
@@ -592,10 +516,12 @@ class SlimeHunterBot:
 
     def run(self):
         threading.Thread(target=self.minimap.update_position, daemon=True).start()
+        threading.Thread(target=self.minimap.find_other_position, daemon=True).start()
         last_search, targets = 0, []
         while self.running:
-            if self.paused:
+            if self.paused or self.minimap.other_detected:
                 time.sleep(0.1)
+                self._release_all_keys()
                 continue
             if time.time() - last_search > 0.15:
                 targets = self.detector.find()

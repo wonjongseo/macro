@@ -1,0 +1,24 @@
+2025-08-05 14:16:56,018 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=21.0 dy=0.0  → False
+2025-08-05 14:16:56,019 [DEBUG] SlimeBot:340 ▶ [MOVE] cur_x= 78  target_x= 57  dx=-21
+2025-08-05 14:16:56,710 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=19.0 dy=0.0  → False
+2025-08-05 14:16:56,711 [DEBUG] SlimeBot:340 ▶ [MOVE] cur_x= 76  target_x= 57  dx=-19
+2025-08-05 14:16:57,417 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=12.0 dy=0.0  → False
+2025-08-05 14:16:57,418 [DEBUG] SlimeBot:340 ▶ [MOVE] cur_x= 69  target_x= 57  dx=-12
+2025-08-05 14:16:58,126 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=7.0 dy=0.0  → True
+2025-08-05 14:16:58,127 [INFO] SlimeBot:378 ▶ [LADDER] from y=159 → end_y=144
+2025-08-05 14:17:03,097 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=4.0 dy=0.0  → False
+2025-08-05 14:17:03,097 [DEBUG] SlimeBot:340 ▶ [MOVE] cur_x= 53  target_x= 57  dx= +4
+2025-08-05 14:17:03,806 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=2.0 dy=0.0  → True
+2025-08-05 14:17:03,806 [INFO] SlimeBot:378 ▶ [LADDER] from y=159 → end_y=144
+2025-08-05 14:17:06,222 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=14.0 dy=0.0  → False
+2025-08-05 14:17:06,222 [DEBUG] SlimeBot:340 ▶ [MOVE] cur_x= 71  target_x= 57  dx=-14
+2025-08-05 14:17:06,930 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=11.0 dy=0.0  → False
+2025-08-05 14:17:06,931 [DEBUG] SlimeBot:340 ▶ [MOVE] cur_x= 68  target_x= 57  dx=-11
+2025-08-05 14:17:07,652 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=6.0 dy=0.0  → True
+2025-08-05 14:17:07,653 [INFO] SlimeBot:378 ▶ [LADDER] from y=159 → end_y=144
+2025-08-05 14:17:10,665 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=0.0 dy=5.0  → True
+2025-08-05 14:17:10,665 [INFO] SlimeBot:378 ▶ [LADDER] from y=154 → end_y=144
+2025-08-05 14:17:12,853 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=12.0 dy=0.0  → False
+2025-08-05 14:17:12,854 [DEBUG] SlimeBot:340 ▶ [MOVE] cur_x= 69  target_x= 57  dx=-12
+2025-08-05 14:17:13,560 [DEBUG] SlimeBot:472 ▶ [REACHED?] wp#0 dx=9.0 dy=0.0  → False
+2025-08-05 14:17:13,560 [DEBUG] SlimeBot:340 ▶ [MOVE] cur_x= 66  target_x= 57  dx= -9

@@ -180,7 +180,7 @@ class RouteEditor(QWidget):
     def _capture_loop(self):
         """반복적으로 캡처만 수행"""
         while self._running:
-            self.tracker.capture_minimap()
+            self.tracker.capturing_minimap()
             time.sleep(0.5)
 
     def _pos_loop(self):
