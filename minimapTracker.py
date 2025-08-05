@@ -25,6 +25,8 @@ class MinimapTracker:
         x1, y1 = tl.left, tl.top
         x2, y2 = br.left + br.width, br.top + br.height
         self.minimap_area = (x1, y1, x2 - x1, y2 - y1)
+        print(f'self.minimap_area : {self.minimap_area}')
+        
         with mss.mss() as sct:
             monitor = {"left": int(x1), "top": int(y1), "width": int(x2 - x1), "height": int(y2 - y1)}
             img = np.array(sct.grab(monitor))[:, :, :3]

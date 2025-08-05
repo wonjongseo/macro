@@ -1,5 +1,14 @@
 # main.py
 
+
+import os, sys
+
+# 이 파일(components/mainmain.py) 기준으로 한 단계 상위 디렉토리를 경로에 추가
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import Config
+
+import threading
+import time
 import json
 import sys
 from PyQt5.QtWidgets import (
@@ -7,12 +16,51 @@ from PyQt5.QtWidgets import (
     QListWidget, QFileDialog, QComboBox, QSpinBox, QFormLayout,
     QLineEdit, QRadioButton, QButtonGroup, QLabel
 )
-from PyQt5.QtCore import Qt, QTimer
-
+from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from app_config import AppConfig
+from main import GameWindowController, MinimapTracker
 
 
 class RouteEditor(QWidget):
+    minimap_updated = pyqtSignal(QImage)
+    pos_updated      = pyqtSignal(object)
+
+    def connect_minimap(self):
+        """미니맵 스레드 실행 및 시그널 연결"""
+        # 시그널 연결
+        self.minimap_updated.connect(self.on_minimap_update)
+        self.pos_updated.connect(self.on_pos_update)
+
+        # 윈도우 리사이즈
+        GameWindowController("MapleStory Worlds", Config.END_X, Config.END_Y).resize()
+        time.sleep(0.5)
+
+        # 트래커 생성
+        self.tracker = MinimapTracker(
+            "windows_png/minimap_topLeft.png",
+            "windows_png/minimap_bottomRight.png",
+            "windows_png/me.png",
+            minimap_emitter=self.minimap_updated.emit,
+            pos_emitter=self.pos_updated.emit
+        )
+
+        # 스레드 제어 플래그 켜기
+        self._running = True
+
+        # 스레드 시작
+        threading.Thread(target=self._capture_loop, daemon=True).start()
+        threading.Thread(target=self._pos_loop, daemon=True).start()
+
+    def disconnect_minimap(self):
+        """미니맵 스레드 정지"""
+        # 스레드가 보는 플래그 내리기
+        self._running = False
+
+        # 시그널 연결 해제
+        self.minimap_updated.disconnect(self.on_minimap_update)
+        self.pos_updated.disconnect(self.on_pos_update)
+    
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Route Patrol Editor')
@@ -22,16 +70,60 @@ class RouteEditor(QWidget):
         layout = QVBoxLayout()
         form = QFormLayout()
 
+        # 미니맵 표시 여부 플래그
+        self.is_show_minimap = False
+        # 캡처 루프 제어 플래그
+        self._running = False
+
+        self.current_position= (0, 0)
+
+        self.toggle_show_minimap_btn = QPushButton("미니맵 열기")
+        self.toggle_show_minimap_btn.clicked.connect(self.toggle_show_minimap)
+        layout.addWidget(self.toggle_show_minimap_btn)
+
+        self.minimap_label = QLabel("미니맵 로딩중...")
+        self.minimap_label.setFixedSize(300,300)
+        self.minimap_label.setAlignment(Qt.AlignCenter)
+        self.minimap_label.hide()
+        
+        self.pos_label = QLabel("내 위치: (x, y)")
+        self.pos_label.setAlignment(Qt.AlignCenter)
+        self.pos_label.hide()      
+
+        # layout.addWidget(self.minimap_label)
+        # layout.addWidget(self.pos_label)
+        self.minimap_row = QHBoxLayout()
+# 2. 각 레이블을 HBox에 추가
+        self.minimap_row.addWidget(self.minimap_label)
+        self.minimap_row.addWidget(self.pos_label)
+        # 3. 메인 레이아웃에 이 HBox를 추가
+        layout.addLayout(self.minimap_row)
+
+        
         # action
         self.action_combo = QComboBox()
         self.action_combo.addItems(['move', 'jump', 'ladder'])
         form.addRow('액션:', self.action_combo)
 
         # start x,y
-        self.start_x = QSpinBox(); self.start_x.setRange(0, 2000)
+        self.start_x = QSpinBox(); self.start_x.setRange(0, 2000)    
+        self.start_x_layout = QHBoxLayout()
+        self.copy_x_button = QPushButton("내 좌표 x 복사")
+        self.copy_x_button.clicked.connect(lambda: self.on_click_copy_xy(True))
+
+        self.start_x_layout.addWidget(self.start_x)
+        self.start_x_layout.addWidget(self.copy_x_button)
+
         self.start_y = QSpinBox(); self.start_y.setRange(0, 2000)
-        form.addRow('시작 X:', self.start_x)
-        form.addRow('시작 Y:', self.start_y)
+        self.start_y_layout = QHBoxLayout()
+        self.copy_y_button = QPushButton("내 좌표 y 복사")
+        self.copy_y_button.clicked.connect(lambda: self.on_click_copy_xy(False))
+
+        self.start_y_layout.addWidget(self.start_y)
+        self.start_y_layout.addWidget(self.copy_y_button)
+
+        form.addRow('시작 X:', self.start_x_layout)
+        form.addRow('시작 Y:', self.start_y_layout)
 
         # ladder end y
         self.end_y = QSpinBox(); self.end_y.setRange(0, 2000)
@@ -66,6 +158,61 @@ class RouteEditor(QWidget):
 
         self.setLayout(layout)
 
+    def on_click_copy_xy(self, isX) :
+        if self.current_position is None:
+            print("self.current_position is NONE")
+        (x,y) =  self.current_position
+        if isX: 
+            self.start_x.setValue(x)
+        else:
+            self.start_y.setValue(y)
+    def on_minimap_update(self, qimg: QImage):
+        """minimap_updated 시그널이 emit 될 때 실행"""
+        pix = QPixmap.fromImage(qimg)
+        self.minimap_label.setPixmap(
+            pix.scaled(
+                self.minimap_label.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+        )
+
+    def _capture_loop(self):
+        """반복적으로 캡처만 수행"""
+        while self._running:
+            self.tracker.capture_minimap()
+            time.sleep(0.5)
+
+    def _pos_loop(self):
+        """반복적으로 위치 업데이트만 수행"""
+        while self._running:
+            self.tracker.update_position()
+            time.sleep(0.5)
+    def on_pos_update(self, pos):
+        """pos_updated 시그널이 emit 될 때 실행"""
+        if pos: 
+            self.current_position = pos         
+            self.pos_label.setText(f"내 위치: {pos[0], pos[1]}")
+        else:
+            self.pos_label.setText("내 위치: (?, ?)")
+
+    def toggle_show_minimap(self):
+        if not self.is_show_minimap:
+            # 켜기
+            self.is_show_minimap = True
+            self.toggle_show_minimap_btn.setText("미니맵 닫기")
+            self.minimap_label.show()
+            self.pos_label.show()
+            self.connect_minimap()
+        else:
+            # 끄기
+            self.is_show_minimap = False
+            self.toggle_show_minimap_btn.setText("미니맵 열기")
+            self.disconnect_minimap()
+            self.minimap_label.hide()
+            self.pos_label.hide()
+    
+    
     def _toggle_fields(self, action):
         self.end_y.setVisible(action == 'ladder')
         self.jump_count.setVisible(action == 'jump')
