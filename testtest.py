@@ -28,7 +28,6 @@ logging.basicConfig(
 
 # ---------- 1. 윈도우/맥 창 조절 ----------
 class GameWindowController:
-
     def __init__(self, title, width, height):
         self.title = title
         self.width = width
@@ -718,8 +717,6 @@ class SlimeHunterBot:
                 # self.terrain.act(self.minimap.current_position)
             
             time.sleep(0.15)
-
-
 
 
 

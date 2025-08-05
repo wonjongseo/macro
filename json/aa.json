@@ -1,0 +1,18 @@
+[
+    {
+        "x": 123,
+        "y": 123,
+        "action": "move"
+    },
+    {
+        "x": 123,
+        "y": 123,
+        "action": "move"
+    },
+    {
+        "x": 44,
+        "y": 44,
+        "action": "jump",
+        "jump_count": 1
+    }
+]

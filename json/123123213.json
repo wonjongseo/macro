@@ -1,0 +1,16 @@
+{
+  "END_X": 922,
+  "END_Y": 700,
+  "HP_thr": 55,
+  "MP_thr": 55,
+  "mode_folder": true,
+  "template_folder": "",
+  "hp_img": "C:/Users/visio/Desktop/develop/macro/windows_png/hp_bar_empty.png",
+  "mp_img": "C:/Users/visio/Desktop/develop/macro/windows_png/mp_bar_empty.png",
+  "mm_tl": "C:/Users/visio/Desktop/develop/macro/windows_png/minimap_topLeft.png",
+  "mm_br": "C:/Users/visio/Desktop/develop/macro/windows_png/minimap_bottomRight.png",
+  "mm_self": "C:/Users/visio/Desktop/develop/macro/windows_png/me.png",
+  "mm_others": "C:/Users/visio/Desktop/develop/macro/windows_png/ather.png",
+  "death_warn": "",
+  "attack_range": 100
+}
